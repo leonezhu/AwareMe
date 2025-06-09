@@ -99,6 +99,18 @@
 
     .btn-secondary:hover {
       background: rgba(255, 255, 255, 0.3);
+      transform: translateY(-1px);
+    }
+    
+    .btn-success {
+      background: #28a745;
+      color: white;
+      border: 1px solid #28a745;
+    }
+    
+    .btn-success:hover {
+      background: #218838;
+      transform: translateY(-1px);
     }
 
     .loading {
@@ -135,7 +147,9 @@
 </head>
 <body>
   <div class="header">
-    <div class="logo">🧠</div>
+    <div class="logo"> 
+      <img src="assets/icons/icon16.png" alt="AwareMe Logo" width="64" height="64">
+    </div>
     <h1 class="title">AwareMe</h1>
     <p class="subtitle">提升自我觉察，优化上网习惯</p>
   </div>
@@ -143,28 +157,26 @@
   <div id="currentSite" class="current-site" style="display: none;">
     <div class="current-site-title">当前网站</div>
     <div class="current-site-domain" id="currentDomain">-</div>
-    <div class="current-site-time" id="currentTime">今日浏览: 0 分钟</div>
   </div>
 
   <div class="stats">
     <div class="stat-item">
-      <span class="stat-label">今日提醒次数</span>
-      <span class="stat-value" id="todayReminders">-</span>
+      <span class="stat-label">今日访问次数</span>
+      <span class="stat-value" id="todayVisits">-</span>
     </div>
     <div class="stat-item">
-      <span class="stat-label">今日浏览网站</span>
-      <span class="stat-value" id="todaySites">-</span>
+      <span class="stat-label">今日浏览时间</span>
+      <span class="stat-value" id="todayDuration">-</span>
     </div>
     <div class="stat-item">
-      <span class="stat-label">本周访问最多</span>
-      <span class="stat-value" id="topSite">-</span>
+      <span class="stat-label">本周访问次数</span>
+      <span class="stat-value" id="weeklyVisits">-</span>
     </div>
   </div>
 
   <div class="actions">
     <button class="btn btn-primary" id="openOptions">管理设置</button>
-    <button class="btn btn-secondary" id="pauseReminders">暂停提醒 (1小时)</button>
-    <button class="btn btn-secondary" id="clearData">清除数据</button>
+    <button class="btn btn-secondary" id="disableExtension">关闭插件</button>
   </div>
 
   <script src="popup.js"></script>

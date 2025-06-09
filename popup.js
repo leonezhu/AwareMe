@@ -2,41 +2,28 @@
 
 class AwareMePopup {
   constructor() {
+    this.isEnabled = true; // 默认启用状态
     this.init();
   }
 
   async init() {
-    await this.loadStats();
+    await this.loadExtensionStatus();
     await this.loadCurrentSite();
     this.bindEvents();
+    this.updateToggleButton();
   }
 
-  async loadStats() {
+  async loadExtensionStatus() {
     try {
-      // 获取今日统计数据
-      const today = new Date().toDateString();
-      const [visitResult, durationResult, reminderResult] = await Promise.all([
-        chrome.storage.local.get([`visits_${today}`]),
-        chrome.storage.local.get([`duration_${today}`]),
-        chrome.storage.local.get([`reminders_${today}`])
-      ]);
-
-      const visits = visitResult[`visits_${today}`] || {};
-      const durations = durationResult[`duration_${today}`] || {};
-      const reminders = reminderResult[`reminders_${today}`] || 0;
-
-      // 更新UI
-      document.getElementById('todayReminders').textContent = reminders;
-      document.getElementById('todaySites').textContent = Object.keys(visits).length;
-
-      // 获取本周访问最多的网站
-      const topSite = await this.getTopSiteThisWeek();
-      document.getElementById('topSite').textContent = topSite || '无';
-
+      const response = await chrome.runtime.sendMessage({ type: 'getExtensionStatus' });
+      this.isEnabled = response.isEnabled;
+      console.log('获取插件状态:', this.isEnabled);
     } catch (error) {
-      console.error('加载统计数据失败:', error);
+      console.error('获取插件状态失败:', error);
     }
   }
+
+
 
   async loadCurrentSite() {
     try {
@@ -47,10 +34,18 @@ class AwareMePopup {
           document.getElementById('currentSite').style.display = 'block';
           document.getElementById('currentDomain').textContent = domain;
 
+          // 获取今日在该网站的访问次数
+          const todayVisits = await this.getTodayVisits(domain);
+          document.getElementById('todayVisits').textContent = todayVisits;
+
           // 获取今日在该网站的浏览时长
           const todayDuration = await this.getTodayDuration(domain);
           const minutes = Math.round(todayDuration / (1000 * 60));
-          document.getElementById('currentTime').textContent = `今日浏览: ${minutes} 分钟`;
+          document.getElementById('todayDuration').textContent = `${minutes} min`;
+
+          // 获取本周在该网站的访问次数
+          const weeklyVisits = await this.getWeeklyVisits(domain);
+          document.getElementById('weeklyVisits').textContent = weeklyVisits;
         }
       }
     } catch (error) {
@@ -58,31 +53,28 @@ class AwareMePopup {
     }
   }
 
-  async getTopSiteThisWeek() {
+  async getTodayVisits(domain) {
+    const today = new Date().toDateString();
+    const visitKey = `visits_${today}`;
+    
+    const result = await chrome.storage.local.get([visitKey]);
+    const visits = result[visitKey] || {};
+    return visits[domain] || 0;
+  }
+
+  async getWeeklyVisits(domain) {
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const siteVisits = {};
+    let totalVisits = 0;
 
     for (let d = new Date(weekAgo); d <= now; d.setDate(d.getDate() + 1)) {
       const dateKey = `visits_${d.toDateString()}`;
       const result = await chrome.storage.local.get([dateKey]);
       const visits = result[dateKey] || {};
-      
-      for (const [domain, count] of Object.entries(visits)) {
-        siteVisits[domain] = (siteVisits[domain] || 0) + count;
-      }
+      totalVisits += visits[domain] || 0;
     }
 
-    let topSite = '';
-    let maxVisits = 0;
-    for (const [domain, visits] of Object.entries(siteVisits)) {
-      if (visits > maxVisits) {
-        maxVisits = visits;
-        topSite = domain;
-      }
-    }
-
-    return topSite;
+    return totalVisits;
   }
 
   async getTodayDuration(domain) {
@@ -101,59 +93,28 @@ class AwareMePopup {
       window.close();
     });
 
-    // 暂停提醒
-    document.getElementById('pauseReminders').addEventListener('click', async () => {
-      const pauseUntil = Date.now() + 60 * 60 * 1000; // 1小时后
-      await chrome.storage.local.set({ pauseUntil });
-      
-      const btn = document.getElementById('pauseReminders');
-      btn.textContent = '已暂停提醒';
-      btn.disabled = true;
-      
-      setTimeout(() => {
-        window.close();
-      }, 1000);
-    });
-
-    // 清除数据
-    document.getElementById('clearData').addEventListener('click', async () => {
-      if (confirm('确定要清除所有统计数据吗？此操作不可恢复。')) {
-        await this.clearAllData();
-        
-        const btn = document.getElementById('clearData');
-        btn.textContent = '数据已清除';
-        btn.disabled = true;
-        
-        // 重新加载统计数据
-        setTimeout(() => {
-          this.loadStats();
-          btn.textContent = '清除数据';
-          btn.disabled = false;
-        }, 1500);
+    // 切换插件启用/禁用状态
+    document.getElementById('disableExtension').addEventListener('click', async () => {
+      try {
+        const response = await chrome.runtime.sendMessage({ type: 'toggleExtension' });
+        this.isEnabled = response.isEnabled;
+        this.updateToggleButton();
+      } catch (error) {
+        console.error('切换插件状态失败:', error);
       }
     });
   }
 
-  async clearAllData() {
-    try {
-      // 获取所有存储的键
-      const allData = await chrome.storage.local.get(null);
-      const keysToRemove = [];
-      
-      for (const key of Object.keys(allData)) {
-        if (key.startsWith('visits_') || 
-            key.startsWith('duration_') || 
-            key.startsWith('reminders_') ||
-            key.startsWith('cooldown_')) {
-          keysToRemove.push(key);
-        }
-      }
-      
-      if (keysToRemove.length > 0) {
-        await chrome.storage.local.remove(keysToRemove);
-      }
-    } catch (error) {
-      console.error('清除数据失败:', error);
+  updateToggleButton() {
+    const toggleButton = document.getElementById('disableExtension');
+    if (this.isEnabled) {
+      toggleButton.textContent = '关闭插件';
+      toggleButton.classList.remove('btn-success');
+      toggleButton.classList.add('btn-secondary');
+    } else {
+      toggleButton.textContent = '启用插件';
+      toggleButton.classList.remove('btn-secondary');
+      toggleButton.classList.add('btn-success');
     }
   }
 
@@ -167,19 +128,7 @@ class AwareMePopup {
   }
 }
 
-// 检查是否处于暂停状态
-async function checkPauseStatus() {
-  const result = await chrome.storage.local.get(['pauseUntil']);
-  if (result.pauseUntil && Date.now() < result.pauseUntil) {
-    const remainingTime = Math.ceil((result.pauseUntil - Date.now()) / (1000 * 60));
-    const btn = document.getElementById('pauseReminders');
-    btn.textContent = `提醒已暂停 (${remainingTime}分钟)`;
-    btn.disabled = true;
-  }
-}
-
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', () => {
   new AwareMePopup();
-  checkPauseStatus();
 });

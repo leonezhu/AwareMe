@@ -5,12 +5,16 @@ class AwareMeBackground {
     this.activeTabId = null;
     this.startTime = null;
     this.config = null;
+    this.isEnabled = true; // 默认启用插件
     this.init();
   }
 
   async init() {
     // 加载配置
     await this.loadConfig();
+    
+    // 加载插件启用状态
+    await this.loadExtensionStatus();
     
     // 监听来自内容脚本的消息
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -23,6 +27,11 @@ class AwareMeBackground {
           chrome.tabs.remove(sender.tab.id);
         }
         sendResponse({ success: true });
+      } else if (message.type === 'toggleExtension') {
+        this.toggleExtensionStatus();
+        sendResponse({ success: true, isEnabled: this.isEnabled });
+      } else if (message.type === 'getExtensionStatus') {
+        sendResponse({ isEnabled: this.isEnabled });
       }
     });
     
@@ -82,7 +91,32 @@ class AwareMeBackground {
     }
   }
 
+  async loadExtensionStatus() {
+    try {
+      const result = await chrome.storage.local.get(['isEnabled']);
+      if (result.hasOwnProperty('isEnabled')) {
+        this.isEnabled = result.isEnabled;
+      } else {
+        // 如果没有设置过，默认为启用状态
+        await chrome.storage.local.set({ isEnabled: true });
+      }
+      console.log('插件启用状态:', this.isEnabled);
+    } catch (error) {
+      console.error('加载插件状态失败:', error);
+    }
+  }
+
+  async toggleExtensionStatus() {
+    this.isEnabled = !this.isEnabled;
+    await chrome.storage.local.set({ isEnabled: this.isEnabled });
+    console.log('插件状态已切换:', this.isEnabled);
+    return this.isEnabled;
+  }
+
   async handleTabUpdate(tab) {
+    // 检查插件是否启用
+    if (!this.isEnabled) return;
+
     const domain = this.extractDomain(tab.url);
     if (!domain) return;
 
@@ -100,6 +134,9 @@ class AwareMeBackground {
   }
   
   async checkDurationLimitOnPageLoad(domain) {
+    // 检查插件是否启用
+    if (!this.isEnabled) return;
+
     const limits = this.config?.durationLimits || [];
     const limit = limits.find(l => domain.includes(l.domain));
     
@@ -140,6 +177,9 @@ class AwareMeBackground {
   }
 
   async checkVisitReminder(domain, url) {
+    // 检查插件是否启用
+    if (!this.isEnabled) return;
+
     const reminders = this.config?.visitReminders || [];
     const reminder = reminders.find(r => domain.includes(r.domain));
     
@@ -161,6 +201,9 @@ class AwareMeBackground {
   }
 
   async checkWeeklyLimit(domain) {
+    // 检查插件是否启用
+    if (!this.isEnabled) return;
+
     const limits = this.config?.weeklyLimits || [];
     const limit = limits.find(l => domain.includes(l.domain));
     
@@ -207,6 +250,8 @@ class AwareMeBackground {
   }
 
   async checkDurationLimits() {
+    // 检查插件是否启用
+    if (!this.isEnabled) return;
     if (!this.activeTabId) return;
 
     try {
@@ -240,6 +285,9 @@ class AwareMeBackground {
   }
 
   async showReminder(message, type) {
+    // 检查插件是否启用
+    if (!this.isEnabled) return;
+
     // 检查是否在冷却期内
     const cooldownKey = `cooldown_${type}_${Date.now()}`;
     const cooldownResult = await chrome.storage.local.get([cooldownKey]);
