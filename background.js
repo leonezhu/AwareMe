@@ -342,7 +342,7 @@ class AwareMeBackground {
       // 如果内容脚本不可用，使用通知API
       chrome.notifications.create({
         type: 'basic',
-        iconUrl: 'assets/icons/icon48.png',
+        iconUrl: 'assets/icons/icon16.png',  // 暂时使用现有图标
         title: 'AwareMe 提醒',
         message: message
       });

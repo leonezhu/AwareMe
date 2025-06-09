@@ -26,12 +26,16 @@
     "default_popup": "popup.html",
     "default_title": "AwareMe",
     "default_icon": {
-      "16": "assets/icons/icon16.png"
+      "16": "assets/icons/icon16.png",
+      "48": "assets/icons/icon16.png",
+      "128": "assets/icons/icon16.png"
     }
   },
   "options_page": "options.html",
   "icons": {
-    "16": "assets/icons/icon16.png"
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon16.png",
+    "128": "assets/icons/icon16.png"
   },
   "web_accessible_resources": [
     {
