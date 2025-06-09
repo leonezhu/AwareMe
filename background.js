@@ -361,7 +361,19 @@ class AwareMeBackground {
   extractDomain(url) {
     try {
       const urlObj = new URL(url);
-      return urlObj.hostname;
+      const hostname = urlObj.hostname;
+      
+      // 提取一级域名（如从t.bilibili.com提取bilibili.com）
+      // 匹配最后两个部分作为一级域名
+      const domainParts = hostname.split('.');
+      
+      // 如果只有两部分或更少（如bilibili.com或localhost），直接返回
+      if (domainParts.length <= 2) {
+        return hostname;
+      }
+      
+      // 否则返回最后两部分（如从t.bilibili.com返回bilibili.com）
+      return domainParts.slice(-2).join('.');
     } catch {
       return null;
     }
