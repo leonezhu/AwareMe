@@ -114,6 +114,11 @@
       text-align: left;
       border-bottom: 1px solid #e2e8f0;
     }
+    
+    /* 隐藏表格最后一行的底部边框 */
+    .config-table tr:last-child td {
+      border-bottom: none;
+    }
 
     .config-table th {
       background: #f8fafc;
@@ -317,11 +322,11 @@
         </table>
         
         <div class="actions">
-          <button class="btn btn-secondary" id="addVisitRule">+ 添加规则</button>
           <div>
             <button class="btn btn-secondary" id="resetVisitDefaults">恢复默认</button>
             <button class="btn btn-primary" id="saveVisitConfig">保存配置</button>
           </div>
+          <button class="btn btn-secondary" id="addVisitRule">+ 添加规则</button>
         </div>
       </div>
 
@@ -347,11 +352,11 @@
         </table>
         
         <div class="actions">
-          <button class="btn btn-secondary" id="addDurationRule">+ 添加规则</button>
           <div>
             <button class="btn btn-secondary" id="resetDurationDefaults">恢复默认</button>
             <button class="btn btn-primary" id="saveDurationConfig">保存配置</button>
           </div>
+          <button class="btn btn-secondary" id="addDurationRule">+ 添加规则</button>
         </div>
       </div>
 
@@ -377,11 +382,11 @@
         </table>
         
         <div class="actions">
-          <button class="btn btn-secondary" id="addWeeklyRule">+ 添加规则</button>
           <div>
             <button class="btn btn-secondary" id="resetWeeklyDefaults">恢复默认</button>
             <button class="btn btn-primary" id="saveWeeklyConfig">保存配置</button>
           </div>
+          <button class="btn btn-secondary" id="addWeeklyRule">+ 添加规则</button>
         </div>
       </div>
 
