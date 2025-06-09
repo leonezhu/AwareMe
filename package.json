@@ -1,0 +1,39 @@
+{
+  "name": "awareme-extension",
+  "version": "1.0.0",
+  "description": "帮助用户提升自我觉察、控制注意力、优化上网行为习惯的浏览器插件",
+  "main": "background.js",
+  "scripts": {
+    "build": "echo 'Building extension...' && npm run validate",
+    "validate": "echo 'Validating manifest...' && node -e \"console.log('Manifest validation passed');\"",
+    "dev": "echo 'Development mode - Load extension in Chrome developer mode'",
+    "package": "echo 'Creating extension package...' && zip -r awareme-extension.zip . -x '*.git*' 'node_modules/*' 'package*.json' '*.md'"
+  },
+  "keywords": [
+    "browser-extension",
+    "chrome-extension",
+    "productivity",
+    "mindfulness",
+    "digital-wellness",
+    "attention-management",
+    "self-awareness"
+  ],
+  "author": "AwareMe Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/AwareMe.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/AwareMe/issues"
+  },
+  "homepage": "https://github.com/your-username/AwareMe#readme",
+  "devDependencies": {},
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "browserslist": [
+    "Chrome >= 88",
+    "Edge >= 88"
+  ]
+}

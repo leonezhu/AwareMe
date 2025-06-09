@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "AwareMe",
+  "version": "1.0.0",
+  "description": "帮助用户提升自我觉察、控制注意力、优化上网行为习惯的浏览器插件",
+  "permissions": [
+    "tabs",
+    "storage",
+    "notifications",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AwareMe",
+    "default_icon": {
+      "16": "assets/icons/icon16.png"
+    }
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "assets/icons/icon16.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["data/default-config.json"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

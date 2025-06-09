@@ -1,0 +1,23 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景圆形 -->
+  <circle cx="64" cy="64" r="60" fill="#3b82f6" stroke="#1e40af" stroke-width="2"/>
+  
+  <!-- 大脑轮廓 -->
+  <path d="M40 45 C35 40, 30 45, 32 52 C28 55, 30 62, 35 65 C32 70, 38 75, 45 72 C50 78, 60 75, 65 70 C75 75, 85 70, 88 65 C93 62, 95 55, 91 52 C93 45, 88 40, 83 45 C78 40, 70 42, 65 47 C60 42, 52 40, 47 45 C45 42, 42 43, 40 45 Z" fill="white" opacity="0.9"/>
+  
+  <!-- 大脑纹理 -->
+  <path d="M45 50 Q55 48, 60 52 Q70 48, 80 52" stroke="#3b82f6" stroke-width="2" fill="none" opacity="0.6"/>
+  <path d="M42 58 Q52 56, 58 60 Q68 56, 78 60" stroke="#3b82f6" stroke-width="2" fill="none" opacity="0.6"/>
+  <path d="M48 66 Q58 64, 64 68 Q74 64, 82 68" stroke="#3b82f6" stroke-width="2" fill="none" opacity="0.6"/>
+  
+  <!-- 眼睛/觉察符号 -->
+  <circle cx="52" cy="55" r="3" fill="#3b82f6"/>
+  <circle cx="76" cy="55" r="3" fill="#3b82f6"/>
+  
+  <!-- 中心点/专注符号 -->
+  <circle cx="64" cy="64" r="2" fill="#1e40af"/>
+  
+  <!-- 外围光环效果 -->
+  <circle cx="64" cy="64" r="58" fill="none" stroke="white" stroke-width="1" opacity="0.3"/>
+  <circle cx="64" cy="64" r="55" fill="none" stroke="white" stroke-width="1" opacity="0.2"/>
+</svg>

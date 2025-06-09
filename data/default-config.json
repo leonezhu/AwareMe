@@ -1,0 +1,50 @@
+{
+  "visitReminders": [
+    {
+      "domain": "weibo.com",
+      "message": "你打开微博是为了找资料还是纯粹打发时间？是否可以选择其他更有意义的替代？"
+    },
+    {
+      "domain": "zhihu.com",
+      "message": "知乎内容碎片化，是否只想短暂逃避？不如写下一个小反思句子。"
+    },
+    {
+      "domain": "bilibili.com",
+      "message": "B站视频很有趣，但你现在真正需要的是什么？是否可以设定一个时间限制？"
+    }
+  ],
+  "durationLimits": [
+    {
+      "domain": "bilibili.com",
+      "minutes": 30,
+      "message": "你今天在 B 站已停留超过 30 分钟，是否要切换到其他计划任务？"
+    },
+    {
+      "domain": "youtube.com",
+      "minutes": 20,
+      "message": "超过 20 分钟了，做个伸展活动吧！"
+    },
+    {
+      "domain": "weibo.com",
+      "minutes": 15,
+      "message": "微博刷了 15 分钟了，是时候回到正事上了！"
+    }
+  ],
+  "weeklyLimits": [
+    {
+      "domain": "github.com",
+      "maxVisits": 4,
+      "message": "你本周已打开 GitHub 超过 4 次，是否需要休息或整理已学内容？"
+    },
+    {
+      "domain": "weibo.com",
+      "maxVisits": 5,
+      "message": "本周你已 5 次进入微博，也许可以暂停下热点消费。"
+    },
+    {
+      "domain": "zhihu.com",
+      "maxVisits": 6,
+      "message": "知乎本周访问较频繁，是否需要整理一下学到的内容？"
+    }
+  ]
+}
