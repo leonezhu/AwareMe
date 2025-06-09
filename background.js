@@ -149,7 +149,7 @@ class AwareMeBackground {
     
     if (limit) {
       const weeklyVisits = await this.getWeeklyVisits(domain);
-      if (weeklyVisits >= limit.maxVisits) {
+      if (weeklyVisits > limit.maxVisits) {
         await this.showReminder(limit.message, 'weekly');
       }
     }
