@@ -26,13 +26,13 @@ class AwareMeContent {
     this.reminderModal = this.createReminderModal(message, type);
     document.body.appendChild(this.reminderModal);
 
-    // 3秒后自动显示关闭按钮
+    // 1秒后自动显示关闭（我知道了）按钮
     setTimeout(() => {
       const closeBtn = this.reminderModal.querySelector('.awareme-close-btn');
       if (closeBtn) {
         closeBtn.style.display = 'block';
       }
-    }, 3000);
+    }, 500);
   }
 
   createReminderModal(message, type) {
@@ -105,6 +105,7 @@ class AwareMeContent {
         background: rgba(0, 0, 0, 0.5);
         backdrop-filter: blur(2px);
         z-index: 1;
+        transition: opacity 0.2s ease;
       }
 
       .awareme-modal-content {
@@ -119,6 +120,15 @@ class AwareMeContent {
         width: 90%;
         animation: awaremeSlideIn 0.3s ease-out;
         z-index: 2;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+
+      .awareme-fade-out {
+        opacity: 0 !important;
+      }
+
+      .awareme-modal-content.awareme-fade-out {
+        transform: translate(-50%, -55%) !important;
       }
 
       @keyframes awaremeSlideIn {
@@ -243,7 +253,11 @@ class AwareMeContent {
   }
 
   closeModal(modal) {
-    modal.style.animation = 'awaremeSlideOut 0.2s ease-in';
+    // 添加淡出动画类
+    modal.querySelector('.awareme-modal-content').classList.add('awareme-fade-out');
+    modal.querySelector('.awareme-modal-overlay').classList.add('awareme-fade-out');
+    
+    // 200ms 后移除模态框
     setTimeout(() => {
       if (modal.parentNode) {
         modal.parentNode.removeChild(modal);
@@ -252,22 +266,6 @@ class AwareMeContent {
         this.reminderModal = null;
       }
     }, 200);
-
-    // 添加退出动画
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes awaremeSlideOut {
-        from {
-          opacity: 1;
-          transform: translate(-50%, -50%);
-        }
-        to {
-          opacity: 0;
-          transform: translate(-50%, -60%);
-        }
-      }
-    `;
-    document.head.appendChild(style);
   }
 }
 
