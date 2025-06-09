@@ -1,20 +1,20 @@
 {
   "visitReminders": [
     {
-      "domain": "weibo.com",
+      "domain": "weibo1.com",
       "message": "是为了找追热点还是纯粹打发时间？是否可以选择其他更有意义的替代？"
     }
   ],
   "durationLimits": [
     {
-      "domain": "bilibili.com",
+      "domain": "bilibili2.com",
       "minutes": 1,
       "message": "你今天在 B 站已停留超过 {{limitTime}} 分钟，是否要切换到其他计划任务？"
     }
   ],
   "weeklyLimits": [
     {
-      "domain": "github.com",
+      "domain": "github3.com",
       "maxVisits": 1,
       "message": "你本周已打开 GitHub {{limitNum}} 次，今天已浏览 {{limitTime}} 分钟，是否需要休息或整理已学内容？"
     }
