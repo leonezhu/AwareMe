@@ -26,11 +26,15 @@ class AwareMeContent {
     this.reminderModal = this.createReminderModal(message, type);
     document.body.appendChild(this.reminderModal);
 
-    // 1秒后自动显示关闭（我知道了）按钮
+    // 1秒后自动显示关闭按钮和关闭网页按钮
     setTimeout(() => {
       const closeBtn = this.reminderModal.querySelector('.awareme-close-btn');
+      const closePageBtn = this.reminderModal.querySelector('.awareme-close-page-btn');
       if (closeBtn) {
         closeBtn.style.display = 'block';
+      }
+      if (closePageBtn) {
+        closePageBtn.style.display = 'block';
       }
     }, 500);
   }
@@ -51,6 +55,7 @@ class AwareMeContent {
         </div>
         <div class="awareme-modal-footer">
           <button class="awareme-close-btn" style="display: none;">我知道了</button>
+          <button class="awareme-close-page-btn" style="display: none;">关闭网页</button>
           <button class="awareme-settings-btn">设置</button>
         </div>
       </div>
@@ -186,6 +191,7 @@ class AwareMeContent {
       }
 
       .awareme-close-btn,
+      .awareme-close-page-btn,
       .awareme-settings-btn {
         padding: 8px 16px;
         border: none;
@@ -205,6 +211,15 @@ class AwareMeContent {
         background: #2563eb;
       }
 
+      .awareme-close-page-btn {
+        background: #ef4444;
+        color: white;
+      }
+
+      .awareme-close-page-btn:hover {
+        background: #dc2626;
+      }
+
       .awareme-settings-btn {
         background: #f3f4f6;
         color: #374151;
@@ -219,12 +234,24 @@ class AwareMeContent {
 
   addModalEventListeners(modal) {
     const closeBtn = modal.querySelector('.awareme-close-btn');
+    const closePageBtn = modal.querySelector('.awareme-close-page-btn');
     const settingsBtn = modal.querySelector('.awareme-settings-btn');
     const overlay = modal.querySelector('.awareme-modal-overlay');
 
     // 关闭按钮
     closeBtn.addEventListener('click', () => {
       this.closeModal(modal);
+    });
+
+    // 关闭网页按钮
+    closePageBtn.addEventListener('click', () => {
+      // 先关闭模态框
+      this.closeModal(modal);
+      // 延迟一点时间后关闭网页，让用户看到模态框关闭的动画
+      setTimeout(() => {
+        // 使用chrome.tabs API关闭当前标签页
+        chrome.runtime.sendMessage({ type: 'closeCurrentTab' });
+      }, 300);
     });
 
     // 设置按钮

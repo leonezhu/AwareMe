@@ -17,6 +17,12 @@ class AwareMeBackground {
       if (message.type === 'openOptions') {
         chrome.runtime.openOptionsPage();
         sendResponse({ success: true });
+      } else if (message.type === 'closeCurrentTab') {
+        // 关闭发送消息的标签页
+        if (sender.tab && sender.tab.id) {
+          chrome.tabs.remove(sender.tab.id);
+        }
+        sendResponse({ success: true });
       }
     });
     
