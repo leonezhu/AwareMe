@@ -84,10 +84,7 @@ class AwareMeOptions {
       this.resetWeeklyDefaults();
     });
 
-    // 统计数据相关事件
-    document.getElementById('exportData').addEventListener('click', () => {
-      this.exportData();
-    });
+ 
     document.getElementById('clearAllData').addEventListener('click', () => {
       this.clearAllData();
     });
@@ -298,6 +295,7 @@ class AwareMeOptions {
       const defaultConfig = await response.json();
       this.config.visitReminders = defaultConfig.visitReminders;
       this.renderVisitTable();
+      await this.saveConfig();
       this.showMessage('已恢复默认配置', 'success');
     }
   }
@@ -308,6 +306,7 @@ class AwareMeOptions {
       const defaultConfig = await response.json();
       this.config.durationLimits = defaultConfig.durationLimits;
       this.renderDurationTable();
+      await this.saveConfig();
       this.showMessage('已恢复默认配置', 'success');
     }
   }
@@ -318,6 +317,7 @@ class AwareMeOptions {
       const defaultConfig = await response.json();
       this.config.weeklyLimits = defaultConfig.weeklyLimits;
       this.renderWeeklyTable();
+      await this.saveConfig();
       this.showMessage('已恢复默认配置', 'success');
     }
   }
@@ -388,26 +388,7 @@ class AwareMeOptions {
     return Object.keys(result).filter(key => key.startsWith(prefix));
   }
 
-  async exportData() {
-    try {
-      const data = await chrome.storage.local.get(null);
-      const json = JSON.stringify(data, null, 2);
-      
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `awareme_data_${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
-      
-      URL.revokeObjectURL(url);
-      this.showMessage('数据导出成功', 'success');
-    } catch (error) {
-      console.error('导出数据失败:', error);
-      this.showMessage('导出数据失败', 'error');
-    }
-  }
+  
 
   async clearAllData() {
     if (confirm('确定要清除所有统计数据吗？此操作不可恢复，但不会影响您的配置。')) {

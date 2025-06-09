@@ -26,6 +26,15 @@ class AwareMeBackground {
       }
     });
     
+    // 监听配置变更
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      if (namespace === 'local' && changes.userConfig) {
+        // 配置已更新，重新加载
+        this.config = changes.userConfig.newValue;
+        console.log('配置已更新', this.config);
+      }
+    });
+    
     // 监听标签页更新
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       if (changeInfo.status === 'complete' && tab.url) {
@@ -55,13 +64,17 @@ class AwareMeBackground {
 
   async loadConfig() {
     try {
+      // 先加载默认配置
+      const defaultResponse = await fetch(chrome.runtime.getURL('data/default-config.json'));
+      const defaultConfig = await defaultResponse.json();
+      
+      // 再加载用户配置，如果有的话
       const result = await chrome.storage.local.get(['userConfig']);
       if (result.userConfig) {
         this.config = result.userConfig;
       } else {
-        // 加载默认配置
-        const response = await fetch(chrome.runtime.getURL('data/default-config.json'));
-        this.config = await response.json();
+        // 如果没有用户配置，使用默认配置
+        this.config = defaultConfig;
         await chrome.storage.local.set({ userConfig: this.config });
       }
     } catch (error) {

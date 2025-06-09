@@ -190,6 +190,7 @@
     .actions {
       display: flex;
       justify-content: space-between;
+      flex-direction: row-reverse;
       align-items: center;
       margin-top: 20px;
       padding-top: 20px;
@@ -328,14 +329,14 @@
       <div id="duration-panel" class="tab-panel">
         <h2 class="section-title">浏览时长监控</h2>
         <p class="section-description">
-          当你在指定网站停留超过设定时间后弹出提醒，帮助你控制浏览时间。
+          当你每天在指定网站停留超过设定时间后弹出提醒，帮助你控制浏览时间。
         </p>
         
         <table class="config-table" id="durationTable">
           <thead>
             <tr>
               <th style="width: 30%;">域名</th>
-              <th style="width: 20%;">时长限制 (分钟)</th>
+              <th style="width: 20%;">每日时长限制 (分钟)</th>
               <th style="width: 40%;">提示内容</th>
               <th style="width: 10%;">操作</th>
             </tr>
@@ -411,7 +412,6 @@
         </div>
         
         <div class="actions">
-          <button class="btn btn-secondary" id="exportData">导出数据</button>
           <button class="btn btn-danger" id="clearAllData">清除所有数据</button>
         </div>
       </div>

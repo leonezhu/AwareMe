@@ -8,14 +8,14 @@
   "durationLimits": [
     {
       "domain": "bilibili.com",
-      "minutes": 30,
+      "minutes": 1,
       "message": "你今天在 B 站已停留超过 {{limitTime}} 分钟，是否要切换到其他计划任务？"
     }
   ],
   "weeklyLimits": [
     {
       "domain": "github.com",
-      "maxVisits": 2,
+      "maxVisits": 1,
       "message": "你本周已打开 GitHub {{limitNum}} 次，今天已浏览 {{limitTime}} 分钟，是否需要休息或整理已学内容？"
     }
   ]
