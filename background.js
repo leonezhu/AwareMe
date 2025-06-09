@@ -222,15 +222,30 @@ class AwareMeBackground {
     const cooldownTime = Date.now() + 5 * 60 * 1000;
     await chrome.storage.local.set({ [cooldownKey]: cooldownTime });
 
-    // 发送消息到内容脚本显示提醒
+    // 获取当前活动标签页的域名
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tabs[0]) {
-        await chrome.tabs.sendMessage(tabs[0].id, {
-          type: 'showReminder',
-          message: message,
-          reminderType: type
-        });
+        const domain = this.extractDomain(tabs[0].url);
+        if (domain) {
+          // 获取当前域名的访问次数和浏览时长
+          const visitCount = await this.getDomainVisitCount(domain);
+          const durationMs = await this.getTodayDuration(domain);
+          
+          // 计算时长（分钟）
+          const durationMinutes = Math.floor(durationMs / 60000);
+          
+          // 发送消息到内容脚本显示提醒
+          await chrome.tabs.sendMessage(tabs[0].id, {
+            type: 'showReminder',
+            message: message,
+            reminderType: type,
+            data: {
+              visitCount: visitCount,
+              durationMinutes: durationMinutes
+            }
+          });
+        }
       }
     } catch (error) {
       // 如果内容脚本不可用，使用通知API
@@ -241,6 +256,15 @@ class AwareMeBackground {
         message: message
       });
     }
+  }
+
+  async getDomainVisitCount(domain) {
+    const today = new Date().toDateString();
+    const visitKey = `visits_${today}`;
+    
+    const result = await chrome.storage.local.get([visitKey]);
+    const visits = result[visitKey] || {};
+    return visits[domain] || 0;
   }
 
   extractDomain(url) {

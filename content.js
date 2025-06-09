@@ -10,20 +10,20 @@ class AwareMeContent {
     // 监听来自后台脚本的消息
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.type === 'showReminder') {
-        this.showReminderModal(message.message, message.reminderType);
+        this.showReminderModal(message.message, message.reminderType, message.data);
         sendResponse({ success: true });
       }
     });
   }
 
-  showReminderModal(message, type) {
+  showReminderModal(message, type, data = {}) {
     // 如果已有提醒窗口，先移除
     if (this.reminderModal) {
       this.reminderModal.remove();
     }
 
     // 创建提醒模态框
-    this.reminderModal = this.createReminderModal(message, type);
+    this.reminderModal = this.createReminderModal(message, type, data);
     document.body.appendChild(this.reminderModal);
 
     // 1秒后自动显示关闭按钮和关闭网页按钮
@@ -39,7 +39,7 @@ class AwareMeContent {
     }, 500);
   }
 
-  createReminderModal(message, type) {
+  createReminderModal(message, type, data = {}) {
     const modal = document.createElement('div');
     modal.className = 'awareme-reminder-modal';
     modal.innerHTML = `
@@ -51,7 +51,7 @@ class AwareMeContent {
           <h3 class="awareme-title">AwareMe 提醒</h3>
         </div>
         <div class="awareme-modal-body">
-          <p class="awareme-message">${this.formatMessage(message)}</p>
+          <p class="awareme-message">${this.formatMessage(message, data)}</p>
         </div>
         <div class="awareme-modal-footer">
           <button class="awareme-close-btn" style="display: none;">我知道了</button>
@@ -80,9 +80,22 @@ class AwareMeContent {
     return icons[type] || '💡';
   }
 
-  formatMessage(message) {
+  formatMessage(message, data = {}) {
+    // 替换占位符
+    let formattedMessage = message;
+    
+    // 替换访问次数占位符
+    if (data.visitCount !== undefined) {
+      formattedMessage = formattedMessage.replace(/\{\{limitNum\}\}/g, data.visitCount);
+    }
+    
+    // 替换访问时长占位符
+    if (data.durationMinutes !== undefined) {
+      formattedMessage = formattedMessage.replace(/\{\{limitTime\}\}/g, data.durationMinutes);
+    }
+    
     // 支持简单的 Markdown 格式
-    return message
+    return formattedMessage
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
       .replace(/\n/g, '<br>');
