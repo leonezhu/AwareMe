@@ -196,7 +196,7 @@ class AwareMeOptions {
           <input type="text" value="${rule.domain}" data-field="domain" data-index="${index}">
         </td>
         <td>
-          <input type="number" value="${rule.maxVisits}" data-field="maxVisits" data-index="${index}" min="1">
+          <input type="number" value="${rule.maxVisits}" data-field="maxVisits" data-index="${index}" min="0">
         </td>
         <td>
           <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
@@ -245,7 +245,7 @@ class AwareMeOptions {
   addWeeklyRule() {
     this.config.weeklyLimits.push({
       domain: '',
-      maxVisits: 5,
+      maxVisits: 0,
       message: ''
     });
     this.renderWeeklyTable();
@@ -280,8 +280,10 @@ class AwareMeOptions {
       const field = input.dataset.field;
       
       if (this.config[configKey][index]) {
-        if (field === 'minutes' || field === 'maxVisits') {
+        if (field === 'minutes') {
           this.config[configKey][index][field] = parseInt(input.value) || 1;
+        } else if (field === 'maxVisits') {
+          this.config[configKey][index][field] = parseInt(input.value) || 0;
         } else {
           this.config[configKey][index][field] = input.value;
         }
@@ -388,10 +390,25 @@ class AwareMeOptions {
       
       // 计算周访问天数
       let weeklyVisitDays = 0;
-      for (let d = new Date(weekAgo); d <= now; d.setDate(d.getDate() + 1)) {
+      
+      // 获取当前日期所在自然周的周一和周日
+      const currentDay = now.getDay(); // 0是周日，1-6是周一到周六
+      
+      // 获取本周的周一日期
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+      monday.setHours(0, 0, 0, 0);
+      
+      // 获取本周的周日日期
+      const sunday = new Date(now);
+      sunday.setDate(now.getDate() + (currentDay === 0 ? 0 : 7 - currentDay));
+      sunday.setHours(23, 59, 59, 999);
+      
+      // 从周一到周日遍历每一天
+      for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
         const dateKey = `visits_${d.toDateString()}`;
         const visits = visitData[dateKey] || {};
-        if (visits[domain]) {
+        if (visits[domain] && visits[domain] > 0) {
           weeklyVisitDays++;
         }
       }

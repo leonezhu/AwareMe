@@ -208,39 +208,48 @@ class AwareMeBackground {
     const limit = limits.find(l => domain.includes(l.domain));
     
     if (limit) {
-      const weeklyVisits = await this.getWeeklyVisits(domain);
-      if (weeklyVisits > limit.maxVisits) {
+      const weeklyVisitedDays = await this.getWeeklyVisits(domain);
+      if (weeklyVisitedDays > limit.maxVisits) {
         await this.showReminder(limit.message, 'weekly');
       }
     }
   }
 
   async getWeeklyVisits(domain) {
-    // 获取当前日期所在周的周一和周日
+    // 获取当前日期所在自然周的周一和周日
     const now = new Date();
     const currentDay = now.getDay(); // 0是周日，1-6是周一到周六
     
-    // 计算本周的周一日期（如果今天是周日，则取上周一）
+    // 获取本周的周一日期
     const monday = new Date(now);
+    // 如果今天是周日(0)，则取本周一(减6天)；否则，从今天减去(今天的星期几-1)天
     monday.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
     monday.setHours(0, 0, 0, 0);
     
-    // 计算本周的周日日期（如果今天是周日，则取今天）
+    // 获取本周的周日日期
     const sunday = new Date(now);
+    // 如果今天是周日(0)，则取今天；否则，从今天加上(7-今天的星期几)天
     sunday.setDate(now.getDate() + (currentDay === 0 ? 0 : 7 - currentDay));
     sunday.setHours(23, 59, 59, 999);
     
-    let totalVisits = 0;
+    console.log(`计算周期：${monday.toLocaleDateString()} 至 ${sunday.toLocaleDateString()}`);
+    
+    // 统计访问天数
+    let visitedDays = 0;
 
     // 从周一到周日遍历每一天
     for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
       const dateKey = `visits_${d.toDateString()}`;
       const result = await chrome.storage.local.get([dateKey]);
       const visits = result[dateKey] || {};
-      totalVisits += visits[domain] || 0;
+      
+      // 如果当天有访问记录，则计数+1
+      if (visits[domain] && visits[domain] > 0) {
+        visitedDays++;
+      }
     }
 
-    return totalVisits;
+    return visitedDays;
   }
 
   async recordDuration(tabId, duration) {
@@ -313,32 +322,35 @@ class AwareMeBackground {
     const cooldownTime = Date.now() + 5 * 60 * 1000;
     await chrome.storage.local.set({ [cooldownKey]: cooldownTime });
 
-    // 获取当前活动标签页的域名
     try {
+      // 获取当前标签页
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tabs[0]) {
-        const domain = this.extractDomain(tabs[0].url);
-        if (domain) {
-          // 获取当前域名的访问次数和浏览时长
-          const visitCount = await this.getDomainVisitCount(domain);
-          const durationMs = await this.getTodayDuration(domain);
-          
-          // 计算时长（分钟）
-          const durationMinutes = Math.floor(durationMs / 60000);
-          
-          // 发送消息到内容脚本显示提醒
-          await chrome.tabs.sendMessage(tabs[0].id, {
-            type: 'showReminder',
-            message: message,
-            reminderType: type,
-            data: {
-              visitCount: visitCount,
-              durationMinutes: durationMinutes
-            }
-          });
-        }
+      if (tabs.length === 0) return;
+      
+      const tab = tabs[0];
+      const domain = this.extractDomain(tab.url);
+      
+      // 替换消息中的占位符
+      let finalMessage = message;
+      
+      if (type === 'duration') {
+        // 获取当前域名的今日浏览时长
+        const todayDuration = await this.getTodayDuration(domain);
+        const minutes = Math.floor(todayDuration / 60000);
+        finalMessage = message.replace(/{{limitTime}}/g, minutes);
+      } else if (type === 'weekly') {
+        // 获取当前域名的本周访问天数
+        const weeklyVisitedDays = await this.getWeeklyVisits(domain);
+        finalMessage = message.replace(/{{limitNum}}/g, weeklyVisitedDays);
       }
+      
+      // 发送消息到内容脚本显示提醒
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'showReminder',
+        message: finalMessage
+      });
     } catch (error) {
+      console.error('显示提醒失败:', error);
       // 如果内容脚本不可用，使用通知API
       chrome.notifications.create({
         type: 'basic',

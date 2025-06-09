@@ -54,7 +54,7 @@ class AwareMeContent {
           <p class="awareme-message">${this.formatMessage(message, data)}</p>
         </div>
         <div class="awareme-modal-footer">
-          <button class="awareme-close-btn" style="display: none;">我知道了</button>
+          <button class="awareme-close-btn" style="display: none;">坚持访问</button>
           <button class="awareme-close-page-btn" style="display: none;">关闭网页</button>
           <button class="awareme-settings-btn">设置</button>
         </div>
