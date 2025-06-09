@@ -94,6 +94,23 @@ class AwareMeBackground {
     
     // 检查周访问频率
     await this.checkWeeklyLimit(domain);
+    
+    // 检查每日访问时长限制
+    await this.checkDurationLimitOnPageLoad(domain);
+  }
+  
+  async checkDurationLimitOnPageLoad(domain) {
+    const limits = this.config?.durationLimits || [];
+    const limit = limits.find(l => domain.includes(l.domain));
+    
+    if (limit) {
+      const todayDuration = await this.getTodayDuration(domain);
+      const limitMs = limit.minutes * 60 * 1000;
+      
+      if (todayDuration >= limitMs) {
+        await this.showReminder(limit.message, 'duration');
+      }
+    }
   }
 
   async handleTabActivated(tabId) {
