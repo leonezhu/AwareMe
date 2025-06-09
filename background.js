@@ -216,11 +216,24 @@ class AwareMeBackground {
   }
 
   async getWeeklyVisits(domain) {
+    // 获取当前日期所在周的周一和周日
     const now = new Date();
-    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const currentDay = now.getDay(); // 0是周日，1-6是周一到周六
+    
+    // 计算本周的周一日期（如果今天是周日，则取上周一）
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+    monday.setHours(0, 0, 0, 0);
+    
+    // 计算本周的周日日期（如果今天是周日，则取今天）
+    const sunday = new Date(now);
+    sunday.setDate(now.getDate() + (currentDay === 0 ? 0 : 7 - currentDay));
+    sunday.setHours(23, 59, 59, 999);
+    
     let totalVisits = 0;
 
-    for (let d = new Date(weekAgo); d <= now; d.setDate(d.getDate() + 1)) {
+    // 从周一到周日遍历每一天
+    for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
       const dateKey = `visits_${d.toDateString()}`;
       const result = await chrome.storage.local.get([dateKey]);
       const visits = result[dateKey] || {};
