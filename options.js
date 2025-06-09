@@ -324,62 +324,87 @@ class AwareMeOptions {
 
   async loadStats() {
     try {
-      // 获取总提醒次数
-      let totalReminders = 0;
-      const reminderKeys = await this.getKeysWithPrefix('reminders_');
-      for (const key of reminderKeys) {
-        const result = await chrome.storage.local.get([key]);
-        totalReminders += result[key] || 0;
-      }
-      document.getElementById('totalReminders').textContent = totalReminders;
-
-      // 获取今日访问网站数
-      const today = new Date().toDateString();
-      const todayVisitsResult = await chrome.storage.local.get([`visits_${today}`]);
-      const todayVisits = todayVisitsResult[`visits_${today}`] || {};
-      document.getElementById('todayVisits').textContent = Object.keys(todayVisits).length;
-
-      // 获取本周访问网站数
-      const now = new Date();
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const weeklyVisits = new Set();
-      
-      for (let d = new Date(weekAgo); d <= now; d.setDate(d.getDate() + 1)) {
-        const dateKey = `visits_${d.toDateString()}`;
-        const result = await chrome.storage.local.get([dateKey]);
-        const visits = result[dateKey] || {};
-        
-        for (const domain of Object.keys(visits)) {
-          weeklyVisits.add(domain);
-        }
-      }
-      document.getElementById('weeklyVisits').textContent = weeklyVisits.size;
-
-      // 获取日均浏览时长
-      let totalDuration = 0;
-      let dayCount = 0;
-      const durationKeys = await this.getKeysWithPrefix('duration_');
-      
-      for (const key of durationKeys) {
-        const result = await chrome.storage.local.get([key]);
-        const durations = result[key] || {};
-        
-        let dayDuration = 0;
-        for (const duration of Object.values(durations)) {
-          dayDuration += duration;
-        }
-        
-        if (dayDuration > 0) {
-          totalDuration += dayDuration;
-          dayCount++;
-        }
-      }
-      
-      const avgMinutes = dayCount > 0 ? Math.round(totalDuration / dayCount / (1000 * 60)) : 0;
-      document.getElementById('avgDailyTime').textContent = avgMinutes;
-
+      // 生成网站详细统计表格
+      await this.renderWebsiteStatsTable();
     } catch (error) {
       console.error('加载统计数据失败:', error);
+    }
+  }
+
+  async renderWebsiteStatsTable() {
+    const tbody = document.getElementById('websiteStatsTableBody');
+    tbody.innerHTML = '';
+
+    // 获取当前日期和一周前的日期
+    const now = new Date();
+    const today = now.toDateString();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    // 一次性获取所有存储数据
+    const allStorageData = await chrome.storage.local.get(null);
+    
+    // 分类存储数据
+    const visitData = {};
+    const durationData = {};
+    const domains = new Set();
+    
+    // 处理所有数据
+    for (const [key, value] of Object.entries(allStorageData)) {
+      if (key.startsWith('visits_')) {
+        visitData[key] = value;
+        // 收集所有域名
+        for (const domain of Object.keys(value)) {
+          domains.add(domain);
+        }
+      } else if (key.startsWith('duration_')) {
+        durationData[key] = value;
+      }
+    }
+    
+    // 获取今日访问数据
+    const todayVisits = visitData[`visits_${today}`] || {};
+    const todayDurations = durationData[`duration_${today}`] || {};
+    
+    // 按今日访问次数降序排序域名
+    const domainStats = [];
+    for (const domain of domains) {
+      // 获取今日访问次数（用于排序）
+      const todayVisitCount = todayVisits[domain] || 0;
+      
+      domainStats.push({ domain, todayVisitCount });
+    }
+    
+    // 按今日访问次数降序排序
+    domainStats.sort((a, b) => b.todayVisitCount - a.todayVisitCount);
+    
+    // 为每个域名计算统计数据并生成表格行
+    for (const { domain } of domainStats) {
+      // 获取当日访问次数
+      const todayVisitCount = todayVisits[domain] || 0;
+      
+      // 获取当日访问时长
+      const todayDuration = todayDurations[domain] || 0;
+      const todayDurationMinutes = Math.round(todayDuration / (1000 * 60));
+      
+      // 计算周访问天数
+      let weeklyVisitDays = 0;
+      for (let d = new Date(weekAgo); d <= now; d.setDate(d.getDate() + 1)) {
+        const dateKey = `visits_${d.toDateString()}`;
+        const visits = visitData[dateKey] || {};
+        if (visits[domain]) {
+          weeklyVisitDays++;
+        }
+      }
+      
+      // 创建表格行
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${domain}</td>
+        <td>${todayVisitCount}</td>
+        <td>${todayDurationMinutes}</td>
+        <td>${weeklyVisitDays}</td>
+      `;
+      tbody.appendChild(row);
     }
   }
 

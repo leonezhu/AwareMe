@@ -366,7 +366,7 @@
           <thead>
             <tr>
               <th style="width: 30%;">域名</th>
-              <th style="width: 20%;">周访问上限</th>
+              <th style="width: 20%;">周访问次数上限</th>
               <th style="width: 40%;">提示内容</th>
               <th style="width: 10%;">操作</th>
             </tr>
@@ -389,27 +389,22 @@
       <div id="stats-panel" class="tab-panel">
         <h2 class="section-title">使用统计</h2>
         <p class="section-description">
-          查看你的浏览习惯统计数据，了解插件的使用效果。
+          只统计当前周使用情况，数据只保存在浏览器中
         </p>
         
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-number" id="totalReminders">0</div>
-            <div class="stat-label">总提醒次数</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-number" id="todayVisits">0</div>
-            <div class="stat-label">今日访问网站</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-number" id="weeklyVisits">0</div>
-            <div class="stat-label">本周访问网站</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-number" id="avgDailyTime">0</div>
-            <div class="stat-label">日均浏览时长 (分钟)</div>
-          </div>
-        </div>
+        <table class="config-table" id="websiteStatsTable">
+          <thead>
+            <tr>
+              <th style="width: 30%;">网站域名</th>
+              <th style="width: 20%;">当日访问次数</th>
+              <th style="width: 20%;">当日访问时长 (分钟)</th>
+              <th style="width: 20%;">周访问天数</th>
+            </tr>
+          </thead>
+          <tbody id="websiteStatsTableBody">
+            <!-- 动态生成 -->
+          </tbody>
+        </table>
         
         <div class="actions">
           <button class="btn btn-danger" id="clearAllData">清除所有数据</button>
