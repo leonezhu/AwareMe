@@ -7,17 +7,22 @@ class AwareMeContent {
     this.init();
   }
 
-  init() {
-    // 立即创建加载遮罩（在document_start阶段）
-    this.createLoadingOverlay();
+  async init() {
+    // 先检查当前域名是否需要监控，只有需要监控的域名才显示遮罩
+    const shouldShowOverlay = await this.shouldShowLoadingOverlay();
+    
+    if (shouldShowOverlay) {
+      // 立即创建加载遮罩（在document_start阶段）
+      this.createLoadingOverlay();
+    }
     
     // 等待DOM加载完成后再进行其他初始化
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
-        this.initAfterDOMLoaded();
+        this.initAfterDOMLoaded(shouldShowOverlay);
       });
     } else {
-      this.initAfterDOMLoaded();
+      this.initAfterDOMLoaded(shouldShowOverlay);
     }
     
     // 监听来自后台脚本的消息
@@ -34,9 +39,81 @@ class AwareMeContent {
     });
   }
 
-  initAfterDOMLoaded() {
-    // DOM加载完成后通知background检查当前页面
-    this.checkCurrentPage();
+  async shouldShowLoadingOverlay() {
+    try {
+      // 获取当前域名
+      const currentDomain = this.extractDomain(window.location.href);
+      if (!currentDomain) {
+        return false;
+      }
+
+      // 获取用户配置
+      const result = await chrome.storage.local.get(['userConfig', 'isEnabled']);
+      const userConfig = result.userConfig;
+      const isEnabled = result.isEnabled;
+
+      // 如果插件未启用，不显示遮罩
+      if (!isEnabled) {
+        return false;
+      }
+
+      // 如果没有配置，不显示遮罩
+      if (!userConfig) {
+        return false;
+      }
+
+      // 检查当前域名是否在任何配置的domains列表中
+      const allConfiguredDomains = [];
+      
+      // 收集所有配置中的域名
+      if (userConfig.visitReminders) {
+        userConfig.visitReminders.forEach(reminder => {
+          if (reminder.domains) {
+            allConfiguredDomains.push(...reminder.domains);
+          }
+        });
+      }
+      
+      if (userConfig.durationLimits) {
+        userConfig.durationLimits.forEach(limit => {
+          if (limit.domains) {
+            allConfiguredDomains.push(...limit.domains);
+          }
+        });
+      }
+      
+      if (userConfig.weeklyLimits) {
+        userConfig.weeklyLimits.forEach(limit => {
+          if (limit.domains) {
+            allConfiguredDomains.push(...limit.domains);
+          }
+        });
+      }
+
+      // 检查当前域名是否匹配任何配置的域名
+      return allConfiguredDomains.some(domain => currentDomain.includes(domain));
+    } catch (error) {
+      console.error('检查是否显示遮罩失败:', error);
+      // 出错时不显示遮罩
+      return false;
+    }
+  }
+
+  extractDomain(url) {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname;
+    } catch (error) {
+      console.error('提取域名失败:', error);
+      return null;
+    }
+  }
+
+  initAfterDOMLoaded(shouldShowOverlay) {
+    // 只有显示了遮罩的情况下才需要通知background检查当前页面
+    if (shouldShowOverlay) {
+      this.checkCurrentPage();
+    }
   }
 
   createLoadingOverlay() {
@@ -243,7 +320,7 @@ class AwareMeContent {
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.9);
+        background: rgba(0, 0, 0, 0.95);
         backdrop-filter: blur(2px);
         z-index: 1;
         transition: opacity 0.2s ease;
