@@ -133,21 +133,136 @@ class AwareMeBackground {
     await this.checkDurationLimitOnPageLoad(domain);
   }
   
+  async checkVisitReminder(domain, url) {
+    // 检查插件是否启用
+    if (!this.isEnabled) return;
+
+    const reminders = this.config?.visitReminders || [];
+    const reminder = reminders.find(r => r.domains && r.domains.some(d => domain.includes(d)));
+    
+    if (reminder) {
+      // 移除关键词匹配检查，直接显示提醒
+      await this.showReminder(reminder.message, 'visit');
+    }
+  }
+
+  async recordVisit(domain) {
+    const today = new Date().toDateString();
+    const visitKey = `visits_${today}`;
+    
+    const result = await chrome.storage.local.get([visitKey]);
+    const visits = result[visitKey] || {};
+    visits[domain] = (visits[domain] || 0) + 1;
+    
+    console.log(`记录访问: ${domain}, 日期: ${today}, 次数: ${visits[domain]}`);
+    
+    await chrome.storage.local.set({ [visitKey]: visits });
+  }
+
+  async checkWeeklyLimit(domain) {
+    // 检查插件是否启用
+    if (!this.isEnabled) return;
+
+    const limits = this.config?.weeklyLimits || [];
+    const limit = limits.find(l => l.domains && l.domains.some(d => domain.includes(d)));
+    
+    if (limit) {
+      // 计算整个组的访问天数
+      const weeklyVisitedDays = await this.getWeeklyVisitsForGroup(limit.domains);
+      console.log(`域名: ${domain}, 组访问天数: ${weeklyVisitedDays}, 限制: ${limit.maxVisits}`);
+      
+      // 修复逻辑：当访问天数大于等于限制时就应该提醒
+      // 特别是当限制为0时，任何访问都应该触发提醒
+      if (weeklyVisitedDays > limit.maxVisits) {
+        console.log(`触发周访问限制提醒: ${limit.message}`);
+        // 不要在这里替换{{limitNum}}，让showReminder方法来处理
+        await this.showReminder(limit.message, 'weekly');
+      }
+    }
+  }
+
+  async getWeeklyVisitsForGroup(domains) {
+    // 获取当前日期所在自然周的周一和周日
+    const now = new Date();
+    const currentDay = now.getDay(); // 0是周日，1-6是周一到周六
+    
+    // 获取本周的周一日期
+    const monday = new Date(now);
+    // 如果今天是周日(0)，则取本周一(减6天)；否则，从今天减去(今天的星期几-1)天
+    monday.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+    monday.setHours(0, 0, 0, 0);
+    
+    // 获取本周的周日日期
+    const sunday = new Date(now);
+    // 如果今天是周日(0)，则取今天；否则，从今天加上(7-今天的星期几)天
+    sunday.setDate(now.getDate() + (currentDay === 0 ? 0 : 7 - currentDay));
+    sunday.setHours(23, 59, 59, 999);
+    
+    console.log(`计算周期：${monday.toLocaleDateString()} 至 ${sunday.toLocaleDateString()}`);
+    console.log(`检查的域名组:`, domains);
+    
+    // 统计访问天数
+    let visitedDays = 0;
+
+    // 从周一到周日遍历每一天
+    for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
+      const dateKey = `visits_${d.toDateString()}`;
+      const result = await chrome.storage.local.get([dateKey]);
+      const visits = result[dateKey] || {};
+      
+      console.log(`${d.toDateString()} 的访问记录:`, visits);
+      
+      // 检查当天是否有访问组内任何域名
+      const hasVisitedAnyDomain = domains.some(domain => {
+        const hasVisit = visits[domain] && visits[domain] > 0;
+        if (hasVisit) {
+          console.log(`在 ${d.toDateString()} 发现域名 ${domain} 的访问记录: ${visits[domain]}`);
+        }
+        return hasVisit;
+      });
+      
+      if (hasVisitedAnyDomain) {
+        visitedDays++;
+        console.log(`${d.toDateString()} 计入访问天数，当前总计: ${visitedDays}`);
+      }
+    }
+    
+    console.log(`组访问天数: ${visitedDays}`);
+    return visitedDays;
+  }
+
   async checkDurationLimitOnPageLoad(domain) {
     // 检查插件是否启用
     if (!this.isEnabled) return;
 
     const limits = this.config?.durationLimits || [];
-    const limit = limits.find(l => domain.includes(l.domain));
+    const limit = limits.find(l => l.domains && l.domains.some(d => domain.includes(d)));
     
     if (limit) {
-      const todayDuration = await this.getTodayDuration(domain);
+      // 计算整个组的今日访问时长
+      const todayDuration = await this.getTodayDurationForGroup(limit.domains);
       const limitMs = limit.minutes * 60 * 1000;
       
       if (todayDuration >= limitMs) {
         await this.showReminder(limit.message, 'duration');
       }
     }
+  }
+
+  async getTodayDurationForGroup(domains) {
+    const today = new Date().toDateString();
+    const durationKey = `duration_${today}`;
+    
+    const result = await chrome.storage.local.get([durationKey]);
+    const durations = result[durationKey] || {};
+    
+    // 计算组内所有域名的总时长
+    let totalDuration = 0;
+    domains.forEach(domain => {
+      totalDuration += durations[domain] || 0;
+    });
+    
+    return totalDuration;
   }
 
   async handleTabActivated(tabId) {
@@ -174,82 +289,6 @@ class AwareMeBackground {
     if (this.activeTabId) {
       this.startTime = Date.now();
     }
-  }
-
-  async checkVisitReminder(domain, url) {
-    // 检查插件是否启用
-    if (!this.isEnabled) return;
-
-    const reminders = this.config?.visitReminders || [];
-    const reminder = reminders.find(r => domain.includes(r.domain));
-    
-    if (reminder) {
-      // 移除关键词匹配检查，直接显示提醒
-      await this.showReminder(reminder.message, 'visit');
-    }
-  }
-
-  async recordVisit(domain) {
-    const today = new Date().toDateString();
-    const visitKey = `visits_${today}`;
-    
-    const result = await chrome.storage.local.get([visitKey]);
-    const visits = result[visitKey] || {};
-    visits[domain] = (visits[domain] || 0) + 1;
-    
-    await chrome.storage.local.set({ [visitKey]: visits });
-  }
-
-  async checkWeeklyLimit(domain) {
-    // 检查插件是否启用
-    if (!this.isEnabled) return;
-
-    const limits = this.config?.weeklyLimits || [];
-    const limit = limits.find(l => domain.includes(l.domain));
-    
-    if (limit) {
-      const weeklyVisitedDays = await this.getWeeklyVisits(domain);
-      if (weeklyVisitedDays > limit.maxVisits) {
-        await this.showReminder(limit.message, 'weekly');
-      }
-    }
-  }
-
-  async getWeeklyVisits(domain) {
-    // 获取当前日期所在自然周的周一和周日
-    const now = new Date();
-    const currentDay = now.getDay(); // 0是周日，1-6是周一到周六
-    
-    // 获取本周的周一日期
-    const monday = new Date(now);
-    // 如果今天是周日(0)，则取本周一(减6天)；否则，从今天减去(今天的星期几-1)天
-    monday.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-    monday.setHours(0, 0, 0, 0);
-    
-    // 获取本周的周日日期
-    const sunday = new Date(now);
-    // 如果今天是周日(0)，则取今天；否则，从今天加上(7-今天的星期几)天
-    sunday.setDate(now.getDate() + (currentDay === 0 ? 0 : 7 - currentDay));
-    sunday.setHours(23, 59, 59, 999);
-    
-    console.log(`计算周期：${monday.toLocaleDateString()} 至 ${sunday.toLocaleDateString()}`);
-    
-    // 统计访问天数
-    let visitedDays = 0;
-
-    // 从周一到周日遍历每一天
-    for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
-      const dateKey = `visits_${d.toDateString()}`;
-      const result = await chrome.storage.local.get([dateKey]);
-      const visits = result[dateKey] || {};
-      
-      // 如果当天有访问记录，则计数+1
-      if (visits[domain] && visits[domain] > 0) {
-        visitedDays++;
-      }
-    }
-
-    return visitedDays;
   }
 
   async recordDuration(tabId, duration) {
@@ -307,14 +346,20 @@ class AwareMeBackground {
   }
 
   async showReminder(message, type) {
+    console.log(`尝试显示提醒: type=${type}, message=${message}`);
+    
     // 检查插件是否启用
-    if (!this.isEnabled) return;
+    if (!this.isEnabled) {
+      console.log('插件未启用，跳过提醒');
+      return;
+    }
 
     // 检查是否在冷却期内
     const cooldownKey = `cooldown_${type}_${Date.now()}`;
     const cooldownResult = await chrome.storage.local.get([cooldownKey]);
     
     if (cooldownResult[cooldownKey]) {
+      console.log('在冷却期内，跳过提醒');
       return; // 在冷却期内，不显示提醒
     }
 
@@ -325,10 +370,15 @@ class AwareMeBackground {
     try {
       // 获取当前标签页
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tabs.length === 0) return;
+      if (tabs.length === 0) {
+        console.log('没有找到活动标签页');
+        return;
+      }
       
       const tab = tabs[0];
       const domain = this.extractDomain(tab.url);
+      
+      console.log(`当前标签页域名: ${domain}`);
       
       // 替换消息中的占位符
       let finalMessage = message;
@@ -339,10 +389,17 @@ class AwareMeBackground {
         const minutes = Math.floor(todayDuration / 60000);
         finalMessage = message.replace(/{{limitTime}}/g, minutes);
       } else if (type === 'weekly') {
-        // 获取当前域名的本周访问天数
-        const weeklyVisitedDays = await this.getWeeklyVisits(domain);
-        finalMessage = message.replace(/{{limitNum}}/g, weeklyVisitedDays);
+        // 对于周访问限制，需要找到包含当前域名的组，然后获取组的访问天数
+        const weeklyLimits = this.config?.weeklyLimits || [];
+        const limit = weeklyLimits.find(l => l.domains.includes(domain));
+        if (limit) {
+          const weeklyVisitedDays = await this.getWeeklyVisitsForGroup(limit.domains);
+          finalMessage = message.replace(/{{limitNum}}/g, weeklyVisitedDays);
+          console.log(`替换后的消息: ${finalMessage}`);
+        }
       }
+      
+      console.log(`发送提醒到标签页 ${tab.id}: ${finalMessage}`);
       
       // 发送消息到内容脚本显示提醒
       chrome.tabs.sendMessage(tab.id, {

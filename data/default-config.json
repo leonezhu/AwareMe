@@ -1,22 +1,25 @@
 {
   "visitReminders": [
     {
-      "domain": "weibo1.com",
+      "groupName": "社交媒体",
+      "domains": ["weibo1.com"],
       "message": "是为了找追热点还是纯粹打发时间？是否可以选择其他更有意义的替代？"
     }
   ],
   "durationLimits": [
     {
-      "domain": "bilibili2.com",
+      "groupName": "视频娱乐",
+      "domains": ["bilibili2.com"],
       "minutes": 1,
-      "message": "你今天在 B 站已停留超过 {{limitTime}} 分钟，是否要切换到其他计划任务？"
+      "message": "你今天在视频网站已停留超过 {{limitTime}} 分钟，是否要切换到其他计划任务？"
     }
   ],
   "weeklyLimits": [
     {
-      "domain": "github3.com",
+      "groupName": "代码托管",
+      "domains": ["github3.com"],
       "maxVisits": 0,
-      "message": "你本周已有 {{limitNum}} 天访问 GitHub ，是否需要休息或整理已学内容？"
+      "message": "你本周已有 {{limitNum}} 天访问代码托管网站，是否需要休息或整理已学内容？"
     }
   ]
 }

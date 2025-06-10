@@ -120,33 +120,28 @@ class AwareMeOptions {
     tbody.innerHTML = '';
 
     this.config.visitReminders.forEach((rule, index) => {
-      const row = this.createVisitRow(rule, index);
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>
+          <input type="text" value="${rule.groupName || ''}" data-field="groupName" data-index="${index}" placeholder="组名">
+        </td>
+        <td>
+          <input type="text" value="${(rule.domains || []).join(', ')}" data-field="domains" data-index="${index}" placeholder="域名列表（用逗号分隔）">
+        </td>
+        <td>
+          <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
+        </td>
+        <td>
+          <button class="btn btn-danger btn-small delete-visit-rule" data-index="${index}">删除</button>
+        </td>
+      `;
       tbody.appendChild(row);
+
+      // 绑定删除规则事件
+      row.querySelector('.delete-visit-rule').addEventListener('click', () => {
+        this.removeVisitRule(index);
+      });
     });
-  }
-
-  createVisitRow(rule, index) {
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>
-        <input type="text" value="${rule.domain}" data-field="domain" data-index="${index}">
-      </td>
-      <td>
-        <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
-      </td>
-      <td>
-        <button class="btn btn-danger btn-small delete-visit-rule" data-index="${index}">删除</button>
-      </td>
-    `;
-
-   
-
-    // 绑定删除规则事件
-    row.querySelector('.delete-visit-rule').addEventListener('click', () => {
-      this.removeVisitRule(index);
-    });
-
-    return row;
   }
 
   addKeyword(ruleIndex, keyword) {
@@ -164,7 +159,10 @@ class AwareMeOptions {
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>
-          <input type="text" value="${rule.domain}" data-field="domain" data-index="${index}">
+          <input type="text" value="${rule.groupName || ''}" data-field="groupName" data-index="${index}" placeholder="组名">
+        </td>
+        <td>
+          <input type="text" value="${(rule.domains || []).join(', ')}" data-field="domains" data-index="${index}" placeholder="域名列表（用逗号分隔）">
         </td>
         <td>
           <input type="number" value="${rule.minutes}" data-field="minutes" data-index="${index}" min="1">
@@ -193,7 +191,10 @@ class AwareMeOptions {
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>
-          <input type="text" value="${rule.domain}" data-field="domain" data-index="${index}">
+          <input type="text" value="${rule.groupName || ''}" data-field="groupName" data-index="${index}" placeholder="组名">
+        </td>
+        <td>
+          <input type="text" value="${(rule.domains || []).join(', ')}" data-field="domains" data-index="${index}" placeholder="域名列表（用逗号分隔）">
         </td>
         <td>
           <input type="number" value="${rule.maxVisits}" data-field="maxVisits" data-index="${index}" min="0">
@@ -216,8 +217,8 @@ class AwareMeOptions {
 
   addVisitRule() {
     this.config.visitReminders.push({
-      domain: '',
-      keywords: [],
+      groupName: '',
+      domains: [],
       message: ''
     });
     this.renderVisitTable();
@@ -230,7 +231,8 @@ class AwareMeOptions {
 
   addDurationRule() {
     this.config.durationLimits.push({
-      domain: '',
+      groupName: '',
+      domains: [],
       minutes: 30,
       message: ''
     });
@@ -244,7 +246,8 @@ class AwareMeOptions {
 
   addWeeklyRule() {
     this.config.weeklyLimits.push({
-      domain: '',
+      groupName: '',
+      domains: [],
       maxVisits: 0,
       message: ''
     });
@@ -257,35 +260,66 @@ class AwareMeOptions {
   }
 
   saveVisitConfig() {
-    this.updateConfigFromTable('visitTableBody', 'visitReminders');
+    this.updateConfigFromTable();
     this.saveConfig();
   }
 
   saveDurationConfig() {
-    this.updateConfigFromTable('durationTableBody', 'durationLimits');
+    this.updateConfigFromTable();
     this.saveConfig();
   }
 
   saveWeeklyConfig() {
-    this.updateConfigFromTable('weeklyTableBody', 'weeklyLimits');
+    this.updateConfigFromTable();
     this.saveConfig();
   }
 
-  updateConfigFromTable(tableBodyId, configKey) {
-    const tbody = document.getElementById(tableBodyId);
-    const inputs = tbody.querySelectorAll('input, textarea');
-    
-    inputs.forEach(input => {
+  updateConfigFromTable() {
+    // 更新访问提醒配置
+    const visitInputs = document.querySelectorAll('#visitTableBody input, #visitTableBody textarea');
+    visitInputs.forEach(input => {
       const index = parseInt(input.dataset.index);
       const field = input.dataset.field;
-      
-      if (this.config[configKey][index]) {
-        if (field === 'minutes') {
-          this.config[configKey][index][field] = parseInt(input.value) || 1;
-        } else if (field === 'maxVisits') {
-          this.config[configKey][index][field] = parseInt(input.value) || 0;
+      if (this.config.visitReminders[index]) {
+        if (field === 'domains') {
+          // 处理域名列表，将逗号分隔的字符串转换为数组
+          this.config.visitReminders[index][field] = input.value.split(',').map(d => d.trim()).filter(d => d);
         } else {
-          this.config[configKey][index][field] = input.value;
+          this.config.visitReminders[index][field] = input.value;
+        }
+      }
+    });
+
+    // 更新时长限制配置
+    const durationInputs = document.querySelectorAll('#durationTableBody input, #durationTableBody textarea');
+    durationInputs.forEach(input => {
+      const index = parseInt(input.dataset.index);
+      const field = input.dataset.field;
+      if (this.config.durationLimits[index]) {
+        if (field === 'domains') {
+          // 处理域名列表，将逗号分隔的字符串转换为数组
+          this.config.durationLimits[index][field] = input.value.split(',').map(d => d.trim()).filter(d => d);
+        } else if (field === 'minutes') {
+          this.config.durationLimits[index][field] = parseInt(input.value) || 1;
+        } else {
+          this.config.durationLimits[index][field] = input.value;
+        }
+      }
+    });
+
+    // 更新周访问限制配置
+    const weeklyInputs = document.querySelectorAll('#weeklyTableBody input, #weeklyTableBody textarea');
+    weeklyInputs.forEach(input => {
+      const index = parseInt(input.dataset.index);
+      const field = input.dataset.field;
+      if (this.config.weeklyLimits[index]) {
+        if (field === 'domains') {
+          // 处理域名列表，将逗号分隔的字符串转换为数组
+          this.config.weeklyLimits[index][field] = input.value.split(',').map(d => d.trim()).filter(d => d);
+        } else if (field === 'maxVisits') {
+          this.config.weeklyLimits[index][field] = parseInt(input.value) || 0;
+        } else {
+          this.config.weeklyLimits[index][field] = input.value;
         }
       }
     });
