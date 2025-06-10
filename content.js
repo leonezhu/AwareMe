@@ -120,7 +120,7 @@ class AwareMeContent {
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(0, 0, 0, 0.9);
         backdrop-filter: blur(2px);
         z-index: 1;
         transition: opacity 0.2s ease;
@@ -274,22 +274,22 @@ class AwareMeContent {
     });
 
     // 点击遮罩层关闭（3秒后才能点击）
-    setTimeout(() => {
-      overlay.addEventListener('click', () => {
-        this.closeModal(modal);
-      });
-    }, 3000);
+    // setTimeout(() => {
+    //   overlay.addEventListener('click', () => {
+    //     this.closeModal(modal);
+    //   });
+    // }, 3000);
 
-    // ESC 键关闭（3秒后才能使用）
-    setTimeout(() => {
-      const handleEscape = (e) => {
-        if (e.key === 'Escape') {
-          this.closeModal(modal);
-          document.removeEventListener('keydown', handleEscape);
-        }
-      };
-      document.addEventListener('keydown', handleEscape);
-    }, 3000);
+    // // ESC 键关闭（3秒后才能使用）
+    // setTimeout(() => {
+    //   const handleEscape = (e) => {
+    //     if (e.key === 'Escape') {
+    //       this.closeModal(modal);
+    //       document.removeEventListener('keydown', handleEscape);
+    //     }
+    //   };
+    //   document.addEventListener('keydown', handleEscape);
+    // }, 3000);
   }
 
   closeModal(modal) {
