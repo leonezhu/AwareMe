@@ -28,25 +28,34 @@ class AwareMePopup {
   async loadCurrentSite() {
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      console.log('当前标签页:', tabs);
       if (tabs[0] && tabs[0].url) {
         const domain = this.extractDomain(tabs[0].url);
+        console.log('提取的域名:', domain);
         if (domain && !domain.startsWith('chrome')) {
           document.getElementById('currentSite').style.display = 'block';
           document.getElementById('currentDomain').textContent = domain;
 
           // 获取今日在该网站的访问次数
           const todayVisits = await this.getTodayVisits(domain);
+          console.log('今日访问次数:', todayVisits);
           document.getElementById('todayVisits').textContent = todayVisits;
 
           // 获取今日在该网站的浏览时长
           const todayDuration = await this.getTodayDuration(domain);
           const minutes = Math.round(todayDuration / (1000 * 60));
+          console.log('今日浏览时长:', todayDuration, '分钟:', minutes);
           document.getElementById('todayDuration').textContent = `${minutes} min`;
 
-          // 获取本周在该网站的访问次数
+          // 获取本周在该网站的访问天数
           const weeklyVisits = await this.getWeeklyVisits(domain);
+          console.log('本周访问天数:', weeklyVisits);
           document.getElementById('weeklyVisits').textContent = weeklyVisits;
+        } else {
+          console.log('域名无效或为chrome页面，不显示统计');
         }
+      } else {
+        console.log('没有找到有效的标签页');
       }
     } catch (error) {
       console.error('加载当前网站信息失败:', error);
@@ -63,6 +72,8 @@ class AwareMePopup {
   }
 
   async getWeeklyVisits(domain) {
+    console.log('计算本周访问天数，域名:', domain);
+    
     // 获取当前日期所在周的周一和周日
     const now = new Date();
     const currentDay = now.getDay(); // 0是周日，1-6是周一到周六
@@ -77,17 +88,19 @@ class AwareMePopup {
     sunday.setDate(now.getDate() + (currentDay === 0 ? 0 : 7 - currentDay));
     sunday.setHours(23, 59, 59, 999);
     
-    let totalVisits = 0;
+    let visitedDays = 0;
 
     // 从周一到周日遍历每一天
     for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
       const dateKey = `visits_${d.toDateString()}`;
       const result = await chrome.storage.local.get([dateKey]);
       const visits = result[dateKey] || {};
-      totalVisits += visits[domain] || 0;
+      if (visits[domain] && visits[domain] > 0) {
+        visitedDays++;
+      }
     }
 
-    return totalVisits;
+    return visitedDays;
   }
 
   async getTodayDuration(domain) {
@@ -134,7 +147,19 @@ class AwareMePopup {
   extractDomain(url) {
     try {
       const urlObj = new URL(url);
-      return urlObj.hostname;
+      const hostname = urlObj.hostname;
+      
+      // 提取一级域名（如从www.bilibili.com提取bilibili.com）
+      // 匹配最后两个部分作为一级域名
+      const domainParts = hostname.split('.');
+      
+      // 如果只有两部分或更少（如bilibili.com或localhost），直接返回
+      if (domainParts.length <= 2) {
+        return hostname;
+      }
+      
+      // 否则返回最后两部分（如从www.bilibili.com返回bilibili.com）
+      return domainParts.slice(-2).join('.');
     } catch {
       return null;
     }

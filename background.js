@@ -357,22 +357,24 @@ class AwareMeBackground {
       const tab = tabs[0];
       const domain = this.extractDomain(tab.url);
       
-      // 替换消息中的占位符
-      let finalMessage = message;
+      // 准备数据对象
+      let data = { rule: rule };
+      
+      // 根据提醒类型设置相应的数据
       if (type === 'duration' && rule) {
-        finalMessage = message.replace(/\{\{limitNum\}\}/g, rule.minutes);
+        data.durationMinutes = rule.minutes;
       } else if (type === 'weekly' && rule) {
-        finalMessage = message.replace(/\{\{limitNum\}\}/g, rule.maxVisits);
+        data.visitCount = rule.maxVisits;
       }
       
-      console.log(`发送提醒到标签页 ${tab.id}: ${finalMessage}`);
+      console.log(`发送提醒到标签页 ${tab.id}: ${message}`, data);
       
       // 发送消息到内容脚本显示提醒
       chrome.tabs.sendMessage(tab.id, {
         type: 'showReminder',
-        message: finalMessage,
+        message: message,
         reminderType: type,
-        data: { rule: rule }
+        data: data
       });
     } catch (error) {
       console.error('显示提醒失败:', error);
@@ -448,10 +450,12 @@ class AwareMeBackground {
     if (durationLimit) {
       // 检查是否已达到时长限制
       const today = new Date().toDateString();
-      const result = await chrome.storage.local.get([`duration_${domain}_${today}`]);
-      const todayDuration = result[`duration_${domain}_${today}`] || 0;
+      const durationKey = `duration_${today}`;
+      const result = await chrome.storage.local.get([durationKey]);
+      const durations = result[durationKey] || {};
+      const todayDuration = durations[domain] || 0;
       
-      if (todayDuration >= durationLimit.minutes) {
+      if (todayDuration >= durationLimit.minutes * 60 * 1000) { // 转换为毫秒
         // 已达到时长限制，显示提醒
         await this.showReminder(durationLimit.message, 'duration', durationLimit);
         return;
