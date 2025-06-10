@@ -346,19 +346,6 @@ class AwareMeBackground {
       return;
     }
 
-    // 检查是否在冷却期内
-    const cooldownKey = `cooldown_${type}_${Date.now()}`;
-    const cooldownResult = await chrome.storage.local.get([cooldownKey]);
-    
-    if (cooldownResult[cooldownKey]) {
-      console.log('在冷却期内，跳过提醒');
-      return; // 在冷却期内，不显示提醒
-    }
-
-    // 设置冷却期（5分钟）
-    const cooldownTime = Date.now() + 5 * 60 * 1000;
-    await chrome.storage.local.set({ [cooldownKey]: cooldownTime });
-
     try {
       // 获取当前标签页
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });

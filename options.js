@@ -476,8 +476,7 @@ class AwareMeOptions {
         for (const key of Object.keys(allData)) {
           if (key.startsWith('visits_') || 
               key.startsWith('duration_') || 
-              key.startsWith('reminders_') ||
-              key.startsWith('cooldown_')) {
+              key.startsWith('reminders_')) {
             keysToRemove.push(key);
           }
         }
