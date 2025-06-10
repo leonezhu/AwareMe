@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "matches": ["*://*/*"],
-      "js": ["content.js"],
+      "js": ["utils.js", "content.js"],
       "run_at": "document_start"
     }
   ],
@@ -40,7 +40,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["data/default-config.json"],
+      "resources": ["data/default-config.json", "utils.js"],
       "matches": ["<all_urls>"]
     }
   ],

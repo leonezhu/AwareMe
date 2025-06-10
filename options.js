@@ -19,14 +19,7 @@ class AwareMeOptions {
 
   async loadConfig() {
     try {
-      const result = await chrome.storage.local.get(['userConfig']);
-      if (result.userConfig) {
-        this.config = result.userConfig;
-      } else {
-        // 加载默认配置
-        const response = await fetch(chrome.runtime.getURL('data/default-config.json'));
-        this.config = await response.json();
-      }
+      this.config = await AwareMeUtils.loadConfig();
     } catch (error) {
       console.error('加载配置失败:', error);
       this.showMessage('加载配置失败', 'error');
@@ -422,30 +415,8 @@ class AwareMeOptions {
       const todayDuration = todayDurations[domain] || 0;
       const todayDurationMinutes = Math.round(todayDuration / (1000 * 60));
       
-      // 计算周访问天数
-      let weeklyVisitDays = 0;
-      
-      // 获取当前日期所在自然周的周一和周日
-      const currentDay = now.getDay(); // 0是周日，1-6是周一到周六
-      
-      // 获取本周的周一日期
-      const monday = new Date(now);
-      monday.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-      monday.setHours(0, 0, 0, 0);
-      
-      // 获取本周的周日日期
-      const sunday = new Date(now);
-      sunday.setDate(now.getDate() + (currentDay === 0 ? 0 : 7 - currentDay));
-      sunday.setHours(23, 59, 59, 999);
-      
-      // 从周一到周日遍历每一天
-      for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
-        const dateKey = `visits_${d.toDateString()}`;
-        const visits = visitData[dateKey] || {};
-        if (visits[domain] && visits[domain] > 0) {
-          weeklyVisitDays++;
-        }
-      }
+      // 使用工具类计算周访问天数
+      const weeklyVisitDays = await AwareMeStats.getWeeklyVisitDays(domain);
       
       // 创建表格行
       const row = document.createElement('tr');

@@ -1,5 +1,8 @@
 // AwareMe 后台脚本
 
+// 导入工具类
+importScripts('utils.js');
+
 class AwareMeBackground {
   constructor() {
     this.activeTabId = null;
@@ -76,23 +79,7 @@ class AwareMeBackground {
   }
 
   async loadConfig() {
-    try {
-      // 先加载默认配置
-      const defaultResponse = await fetch(chrome.runtime.getURL('data/default-config.json'));
-      const defaultConfig = await defaultResponse.json();
-      
-      // 再加载用户配置，如果有的话
-      const result = await chrome.storage.local.get(['userConfig']);
-      if (result.userConfig) {
-        this.config = result.userConfig;
-      } else {
-        // 如果没有用户配置，使用默认配置
-        this.config = defaultConfig;
-        await chrome.storage.local.set({ userConfig: this.config });
-      }
-    } catch (error) {
-      console.error('加载配置失败:', error);
-    }
+    this.config = await AwareMeUtils.loadConfig();
   }
 
   async loadExtensionStatus() {
@@ -174,54 +161,10 @@ class AwareMeBackground {
   }
 
   async getWeeklyVisitsForGroup(domains) {
-    // 获取当前日期所在自然周的周一和周日
-    const now = new Date();
-    const currentDay = now.getDay(); // 0是周日，1-6是周一到周六
-    
-    // 获取本周的周一日期
-    const monday = new Date(now);
-    // 如果今天是周日(0)，则取本周一(减6天)；否则，从今天减去(今天的星期几-1)天
-    monday.setDate(now.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
-    monday.setHours(0, 0, 0, 0);
-    
-    // 获取本周的周日日期
-    const sunday = new Date(now);
-    // 如果今天是周日(0)，则取今天；否则，从今天加上(7-今天的星期几)天
-    sunday.setDate(now.getDate() + (currentDay === 0 ? 0 : 7 - currentDay));
-    sunday.setHours(23, 59, 59, 999);
-    
-    console.log(`计算周期：${monday.toLocaleDateString()} 至 ${sunday.toLocaleDateString()}`);
-    console.log(`检查的域名组:`, domains);
-    
-    // 统计访问天数
-    let visitedDays = 0;
-
-    // 从周一到周日遍历每一天
-    for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
-      const dateKey = `visits_${d.toDateString()}`;
-      const result = await chrome.storage.local.get([dateKey]);
-      const visits = result[dateKey] || {};
-      
-      console.log(`${d.toDateString()} 的访问记录:`, visits);
-      
-      // 检查当天是否有访问组内任何域名
-      const hasVisitedAnyDomain = domains.some(domain => {
-        const hasVisit = visits[domain] && visits[domain] > 0;
-        if (hasVisit) {
-          console.log(`在 ${d.toDateString()} 发现域名 ${domain} 的访问记录: ${visits[domain]}`);
-        }
-        return hasVisit;
-      });
-      
-      if (hasVisitedAnyDomain) {
-        visitedDays++;
-        console.log(`${d.toDateString()} 计入访问天数，当前总计: ${visitedDays}`);
-      }
-    }
-    
-    console.log(`组访问天数: ${visitedDays}`);
-    return visitedDays;
+    return await AwareMeStats.getWeeklyVisitDaysForGroup(domains);
   }
+
+
 
   async checkDurationLimitOnPageLoad(domain) {
     // 检查插件是否启用
@@ -242,19 +185,7 @@ class AwareMeBackground {
   }
 
   async getTodayDurationForGroup(domains) {
-    const today = new Date().toDateString();
-    const durationKey = `duration_${today}`;
-    
-    const result = await chrome.storage.local.get([durationKey]);
-    const durations = result[durationKey] || {};
-    
-    // 计算组内所有域名的总时长
-    let totalDuration = 0;
-    domains.forEach(domain => {
-      totalDuration += durations[domain] || 0;
-    });
-    
-    return totalDuration;
+    return await AwareMeStats.getTodayDurationForGroup(domains);
   }
 
   async handleTabActivated(tabId) {
@@ -286,7 +217,7 @@ class AwareMeBackground {
   async recordDuration(tabId, duration) {
     try {
       const tab = await chrome.tabs.get(tabId);
-      const domain = this.extractDomain(tab.url);
+      const domain = AwareMeUtils.extractDomain(tab.url);
       if (!domain) return;
 
       const today = new Date().toDateString();
@@ -309,14 +240,14 @@ class AwareMeBackground {
 
     try {
       const tab = await chrome.tabs.get(this.activeTabId);
-      const domain = this.extractDomain(tab.url);
+      const domain = AwareMeUtils.extractDomain(tab.url);
       if (!domain) return;
 
       const limits = this.config?.durationLimits || [];
       const limit = limits.find(l => domain.includes(l.domain));
       
       if (limit) {
-        const todayDuration = await this.getTodayDuration(domain);
+        const todayDuration = await AwareMeStats.getTodayDuration(domain);
         const limitMs = limit.minutes * 60 * 1000;
         
         if (todayDuration >= limitMs) {
@@ -328,14 +259,7 @@ class AwareMeBackground {
     }
   }
 
-  async getTodayDuration(domain) {
-    const today = new Date().toDateString();
-    const durationKey = `duration_${today}`;
-    
-    const result = await chrome.storage.local.get([durationKey]);
-    const durations = result[durationKey] || {};
-    return durations[domain] || 0;
-  }
+
 
   async showReminder(message, type, rule = null) {
     console.log(`尝试显示提醒: type=${type}, message=${message}`);
@@ -355,7 +279,7 @@ class AwareMeBackground {
       }
       
       const tab = tabs[0];
-      const domain = this.extractDomain(tab.url);
+      const domain = AwareMeUtils.extractDomain(tab.url);
       
       // 准备数据对象
       let data = { rule: rule };
@@ -388,35 +312,7 @@ class AwareMeBackground {
     }
   }
 
-  async getDomainVisitCount(domain) {
-    const today = new Date().toDateString();
-    const visitKey = `visits_${today}`;
-    
-    const result = await chrome.storage.local.get([visitKey]);
-    const visits = result[visitKey] || {};
-    return visits[domain] || 0;
-  }
 
-  extractDomain(url) {
-    try {
-      const urlObj = new URL(url);
-      const hostname = urlObj.hostname;
-      
-      // 提取一级域名（如从t.bilibili.com提取bilibili.com）
-      // 匹配最后两个部分作为一级域名
-      const domainParts = hostname.split('.');
-      
-      // 如果只有两部分或更少（如bilibili.com或localhost），直接返回
-      if (domainParts.length <= 2) {
-        return hostname;
-      }
-      
-      // 否则返回最后两部分（如从t.bilibili.com返回bilibili.com）
-      return domainParts.slice(-2).join('.');
-    } catch {
-      return null;
-    }
-  }
 
   async handlePageCheck(url, tab) {
     // 检查插件是否启用
@@ -426,7 +322,7 @@ class AwareMeBackground {
       return;
     }
 
-    const domain = this.extractDomain(url);
+    const domain = AwareMeUtils.extractDomain(url);
     if (!domain) {
       // 无法提取域名，允许访问
       chrome.tabs.sendMessage(tab.id, { type: 'pageAllowed' });
@@ -468,7 +364,8 @@ class AwareMeBackground {
     
     if (weeklyLimit) {
       // 检查本周访问次数
-      const weekStart = this.getWeekStart();
+      const { monday } = AwareMeUtils.getWeekRange();
+      const weekStart = monday.toDateString();
       const result = await chrome.storage.local.get([`weekly_${domain}_${weekStart}`]);
       const weeklyVisits = result[`weekly_${domain}_${weekStart}`] || 0;
       
@@ -483,28 +380,7 @@ class AwareMeBackground {
     chrome.tabs.sendMessage(tab.id, { type: 'pageAllowed' });
     
     // 记录访问（在允许访问后）
-    await this.recordVisit(domain);
-  }
-
-  getWeekStart() {
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // 周一为一周开始
-    const weekStart = new Date(now.setDate(diff));
-    return weekStart.toDateString();
-  }
-
-  async recordVisit(domain) {
-    const today = new Date().toDateString();
-    const visitKey = `visits_${today}`;
-    
-    const result = await chrome.storage.local.get([visitKey]);
-    const visits = result[visitKey] || {};
-    visits[domain] = (visits[domain] || 0) + 1;
-    
-    console.log(`记录访问: ${domain}, 日期: ${today}, 次数: ${visits[domain]}`);
-    
-    await chrome.storage.local.set({ [visitKey]: visits });
+    await AwareMeStats.recordVisit(domain);
   }
 }
 

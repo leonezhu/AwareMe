@@ -45,7 +45,7 @@ class AwareMeContent {
   async shouldShowLoadingOverlay() {
     try {
       // 获取当前域名
-      const currentDomain = this.extractDomain(window.location.href);
+      const currentDomain = AwareMeUtils.extractDomain(window.location.href);
       if (!currentDomain) {
         return false;
       }
@@ -65,36 +65,8 @@ class AwareMeContent {
         return false;
       }
 
-      // 检查当前域名是否在任何配置的domains列表中
-      const allConfiguredDomains = [];
-      
-      // 收集所有配置中的域名
-      if (userConfig.visitReminders) {
-        userConfig.visitReminders.forEach(reminder => {
-          if (reminder.domains) {
-            allConfiguredDomains.push(...reminder.domains);
-          }
-        });
-      }
-      
-      if (userConfig.durationLimits) {
-        userConfig.durationLimits.forEach(limit => {
-          if (limit.domains) {
-            allConfiguredDomains.push(...limit.domains);
-          }
-        });
-      }
-      
-      if (userConfig.weeklyLimits) {
-        userConfig.weeklyLimits.forEach(limit => {
-          if (limit.domains) {
-            allConfiguredDomains.push(...limit.domains);
-          }
-        });
-      }
-
-      // 检查当前域名是否匹配任何配置的域名
-      return allConfiguredDomains.some(domain => currentDomain.includes(domain));
+      // 使用工具类检查域名是否在配置中
+      return AwareMeUtils.isDomainConfigured(currentDomain, userConfig);
     } catch (error) {
       console.error('检查是否显示遮罩失败:', error);
       // 出错时不显示遮罩
@@ -102,28 +74,8 @@ class AwareMeContent {
     }
   }
 
-  extractDomain(url) {
-    try {
-      const urlObj = new URL(url);
-      const hostname = urlObj.hostname;
-      
-      // 提取一级域名（如从www.bilibili.com提取bilibili.com）
-      // 匹配最后两个部分作为一级域名
-      const domainParts = hostname.split('.');
-      
-      // 如果只有两部分或更少（如bilibili.com或localhost），直接返回
-      if (domainParts.length <= 2) {
-        return hostname;
-      }
-      
-      // 否则返回最后两部分（如从www.bilibili.com返回bilibili.com）
-      return domainParts.slice(-2).join('.');
-    } catch (error) {
-      console.error('提取域名失败:', error);
-      return null;
-    }
-  }
 
+  
   initAfterDOMLoaded(shouldShowOverlay) {
     // DOM加载完成后的其他初始化工作
     // 页面检查已经在init方法中立即执行了，这里不需要再次调用
