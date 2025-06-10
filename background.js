@@ -398,7 +398,7 @@ class AwareMeBackground {
       // const hasVisitedTodayInGroup = await this.hasVisitedTodayInGroup(weeklyLimit.domains);
       
       // 如果访问天数已达到限制，则阻止访问
-      if (weeklyVisitedDays >= weeklyLimit.maxVisits) {
+      if (weeklyVisitedDays > weeklyLimit.maxVisits) {
         return {
           shouldBlock: true,
           message: weeklyLimit.message,
