@@ -14,6 +14,9 @@ class AwareMeContent {
     if (shouldShowOverlay) {
       // 立即创建加载遮罩（在document_start阶段）
       this.createLoadingOverlay();
+      
+      // 立即异步检查页面访问权限，不等待DOM加载完成
+      this.checkCurrentPage();
     }
     
     // 等待DOM加载完成后再进行其他初始化
@@ -110,10 +113,8 @@ class AwareMeContent {
   }
 
   initAfterDOMLoaded(shouldShowOverlay) {
-    // 只有显示了遮罩的情况下才需要通知background检查当前页面
-    if (shouldShowOverlay) {
-      this.checkCurrentPage();
-    }
+    // DOM加载完成后的其他初始化工作
+    // 页面检查已经在init方法中立即执行了，这里不需要再次调用
   }
 
   createLoadingOverlay() {
