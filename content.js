@@ -3,17 +3,132 @@
 class AwareMeContent {
   constructor() {
     this.reminderModal = null;
+    this.loadingOverlay = null;
     this.init();
   }
 
   init() {
+    // 立即创建加载遮罩（在document_start阶段）
+    this.createLoadingOverlay();
+    
+    // 等待DOM加载完成后再进行其他初始化
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        this.initAfterDOMLoaded();
+      });
+    } else {
+      this.initAfterDOMLoaded();
+    }
+    
     // 监听来自后台脚本的消息
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.type === 'showReminder') {
+        this.removeLoadingOverlay();
         this.showReminderModal(message.message, message.reminderType, message.data);
+        sendResponse({ success: true });
+      } else if (message.type === 'pageAllowed') {
+        // 页面被允许访问，移除遮罩
+        this.removeLoadingOverlay();
         sendResponse({ success: true });
       }
     });
+  }
+
+  initAfterDOMLoaded() {
+    // DOM加载完成后通知background检查当前页面
+    this.checkCurrentPage();
+  }
+
+  createLoadingOverlay() {
+    // 如果已有遮罩，先移除
+    if (this.loadingOverlay) {
+      this.loadingOverlay.remove();
+    }
+
+    this.loadingOverlay = document.createElement('div');
+    this.loadingOverlay.className = 'awareme-loading-overlay';
+    this.loadingOverlay.innerHTML = `
+      <div class="awareme-loading-content">
+        <div class="awareme-loading-spinner"></div>
+        <div class="awareme-loading-text">正在检查访问权限...</div>
+      </div>
+    `;
+
+    // 添加样式
+    const style = document.createElement('style');
+    style.textContent = `
+      .awareme-loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.95);
+        z-index: 999999;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+      
+      .awareme-loading-content {
+        text-align: center;
+        padding: 40px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(0, 0, 0, 0.1);
+      }
+      
+      .awareme-loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #007AFF;
+        border-radius: 50%;
+        animation: awareme-spin 1s linear infinite;
+        margin: 0 auto 20px;
+      }
+      
+      .awareme-loading-text {
+        color: #333;
+        font-size: 16px;
+        font-weight: 500;
+      }
+      
+      @keyframes awareme-spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    `;
+    
+    // 在document_start阶段，使用document.documentElement
+    if (document.head) {
+      document.head.appendChild(style);
+    } else {
+      document.documentElement.appendChild(style);
+    }
+    
+    // 直接添加到documentElement，因为body可能还不存在
+    document.documentElement.appendChild(this.loadingOverlay);
+  }
+
+  removeLoadingOverlay() {
+    if (this.loadingOverlay) {
+      this.loadingOverlay.remove();
+      this.loadingOverlay = null;
+    }
+  }
+
+  async checkCurrentPage() {
+    // 发送消息给background检查当前页面
+    try {
+      await chrome.runtime.sendMessage({ type: 'checkCurrentPage', url: window.location.href });
+    } catch (error) {
+      console.error('检查页面失败:', error);
+      // 如果检查失败，移除遮罩允许访问
+      this.removeLoadingOverlay();
+    }
   }
 
   showReminderModal(message, type, data = {}) {
@@ -295,12 +410,12 @@ class AwareMeContent {
     // 关闭网页按钮
     closePageBtn.addEventListener('click', () => {
       // 先关闭模态框
-      this.closeModal(modal);
+      // this.closeModal(modal);
       // 延迟一点时间后关闭网页，让用户看到模态框关闭的动画
-      setTimeout(() => {
+      // setTimeout(() => {
         // 使用chrome.tabs API关闭当前标签页
         chrome.runtime.sendMessage({ type: 'closeCurrentTab' });
-      }, 300);
+      // }, 300);
     });
 
     // 设置按钮

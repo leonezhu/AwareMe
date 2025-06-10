@@ -32,6 +32,10 @@ class AwareMeBackground {
         sendResponse({ success: true, isEnabled: this.isEnabled });
       } else if (message.type === 'getExtensionStatus') {
         sendResponse({ isEnabled: this.isEnabled });
+      } else if (message.type === 'checkCurrentPage') {
+        // 处理页面检查请求
+        this.handlePageCheck(message.url, sender.tab);
+        sendResponse({ success: true });
       }
     });
     
@@ -117,20 +121,8 @@ class AwareMeBackground {
     // 检查插件是否启用
     if (!this.isEnabled) return;
 
-    const domain = this.extractDomain(tab.url);
-    if (!domain) return;
-
-    // 检查访问提醒
-    await this.checkVisitReminder(domain, tab.url);
-    
-    // 记录访问次数
-    await this.recordVisit(domain);
-    
-    // 检查周访问频率
-    await this.checkWeeklyLimit(domain);
-    
-    // 检查每日访问时长限制
-    await this.checkDurationLimitOnPageLoad(domain);
+    // 页面更新时不再进行检查，因为content script会主动请求检查
+    // 这避免了重复检查和记录
   }
   
   async checkVisitReminder(domain, url) {
@@ -435,6 +427,93 @@ class AwareMeBackground {
     } catch {
       return null;
     }
+  }
+
+  async handlePageCheck(url, tab) {
+    // 检查插件是否启用
+    if (!this.isEnabled) {
+      // 插件未启用，允许访问
+      chrome.tabs.sendMessage(tab.id, { type: 'pageAllowed' });
+      return;
+    }
+
+    const domain = this.extractDomain(url);
+    if (!domain) {
+      // 无法提取域名，允许访问
+      chrome.tabs.sendMessage(tab.id, { type: 'pageAllowed' });
+      return;
+    }
+
+    // 检查是否有访问提醒配置
+    const reminders = this.config?.visitReminders || [];
+    const reminder = reminders.find(r => r.domains && r.domains.some(d => domain.includes(d)));
+    
+    if (reminder) {
+      // 有访问提醒，显示提醒（这会自动移除遮罩）
+      await this.showReminder(reminder.message, 'visit', reminder);
+      return;
+    }
+
+    // 检查是否有时长限制配置
+    const durationLimits = this.config?.durationLimits || [];
+    const durationLimit = durationLimits.find(r => r.domains && r.domains.some(d => domain.includes(d)));
+    
+    if (durationLimit) {
+      // 检查是否已达到时长限制
+      const today = new Date().toDateString();
+      const result = await chrome.storage.local.get([`duration_${domain}_${today}`]);
+      const todayDuration = result[`duration_${domain}_${today}`] || 0;
+      
+      if (todayDuration >= durationLimit.minutes) {
+        // 已达到时长限制，显示提醒
+        await this.showReminder(durationLimit.message, 'duration', durationLimit);
+        return;
+      }
+    }
+
+    // 检查是否有周访问限制配置
+    const weeklyLimits = this.config?.weeklyLimits || [];
+    const weeklyLimit = weeklyLimits.find(r => r.domains && r.domains.some(d => domain.includes(d)));
+    
+    if (weeklyLimit) {
+      // 检查本周访问次数
+      const weekStart = this.getWeekStart();
+      const result = await chrome.storage.local.get([`weekly_${domain}_${weekStart}`]);
+      const weeklyVisits = result[`weekly_${domain}_${weekStart}`] || 0;
+      
+      if (weeklyVisits >= weeklyLimit.maxVisits) {
+        // 已达到周访问限制，显示提醒
+        await this.showReminder(weeklyLimit.message, 'weekly', weeklyLimit);
+        return;
+      }
+    }
+
+    // 没有任何限制或提醒，允许访问
+    chrome.tabs.sendMessage(tab.id, { type: 'pageAllowed' });
+    
+    // 记录访问（在允许访问后）
+    await this.recordVisit(domain);
+  }
+
+  getWeekStart() {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const diff = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // 周一为一周开始
+    const weekStart = new Date(now.setDate(diff));
+    return weekStart.toDateString();
+  }
+
+  async recordVisit(domain) {
+    const today = new Date().toDateString();
+    const visitKey = `visits_${today}`;
+    
+    const result = await chrome.storage.local.get([visitKey]);
+    const visits = result[visitKey] || {};
+    visits[domain] = (visits[domain] || 0) + 1;
+    
+    console.log(`记录访问: ${domain}, 日期: ${today}, 次数: ${visits[domain]}`);
+    
+    await chrome.storage.local.set({ [visitKey]: visits });
   }
 }
 
