@@ -111,60 +111,10 @@ class AwareMeBackground {
     // 页面更新时不再进行检查，因为content script会主动请求检查
     // 这避免了重复检查和记录
   }
-  
-  async checkVisitReminder(domain, url) {
-    // 检查插件是否启用
-    if (!this.isEnabled) return;
-
-    const reminders = this.config?.visitReminders || [];
-    const reminder = reminders.find(r => r.domains && r.domains.some(d => domain.includes(d)));
-    
-    if (reminder) {
-      // 移除关键词匹配检查，直接显示提醒
-      await this.showReminder(reminder.message, 'visit', reminder);
-    }
-  }
-
-  async recordVisit(domain) {
-    const today = new Date().toDateString();
-    const visitKey = `visits_${today}`;
-    
-    const result = await chrome.storage.local.get([visitKey]);
-    const visits = result[visitKey] || {};
-    visits[domain] = (visits[domain] || 0) + 1;
-    
-    console.log(`记录访问: ${domain}, 日期: ${today}, 次数: ${visits[domain]}`);
-    
-    await chrome.storage.local.set({ [visitKey]: visits });
-  }
-
-  async checkWeeklyLimit(domain) {
-    // 检查插件是否启用
-    if (!this.isEnabled) return;
-
-    const limits = this.config?.weeklyLimits || [];
-    const limit = limits.find(l => l.domains && l.domains.some(d => domain.includes(d)));
-    
-    if (limit) {
-      // 计算整个组的访问天数
-      const weeklyVisitedDays = await this.getWeeklyVisitsForGroup(limit.domains);
-      console.log(`域名: ${domain}, 组访问天数: ${weeklyVisitedDays}, 限制: ${limit.maxVisits}`);
-      
-      // 修复逻辑：当访问天数大于等于限制时就应该提醒
-      // pecially when limit is 0, any visit should trigger reminder
-      if (weeklyVisitedDays > limit.maxVisits) {
-        console.log(`触发周访问限制提醒: ${limit.message}`);
-        // 不要在这里替换{{limitNum}}，让showReminder方法来处理
-        await this.showReminder(limit.message, 'weekly', limit);
-      }
-    }
-  }
 
   async getWeeklyVisitsForGroup(domains) {
     return await AwareMeStats.getWeeklyVisitDaysForGroup(domains);
   }
-
-
 
   async checkDurationLimitOnPageLoad(domain) {
     // 检查插件是否启用
@@ -179,7 +129,7 @@ class AwareMeBackground {
       const limitMs = limit.minutes * 60 * 1000;
       
       if (todayDuration >= limitMs) {
-        await this.showReminder(limit.message, 'duration', limit);
+        await this.showReminder(limit.message, 'duration', limit, todayDuration);
       }
     }
   }
@@ -251,7 +201,7 @@ class AwareMeBackground {
         const limitMs = limit.minutes * 60 * 1000;
         
         if (todayDuration >= limitMs) {
-          await this.showReminder(limit.message, 'duration');
+          await this.showReminder(limit.message, 'duration', limit, todayDuration);
         }
       }
     } catch (error) {
@@ -261,7 +211,7 @@ class AwareMeBackground {
 
 
 
-  async showReminder(message, type, rule = null) {
+  async showReminder(message, type, rule = null, actualValue = null) {
     console.log(`尝试显示提醒: type=${type}, message=${message}`);
     
     // 检查插件是否启用
@@ -284,11 +234,21 @@ class AwareMeBackground {
       // 准备数据对象
       let data = { rule: rule };
       
-      // 根据提醒类型设置相应的数据
+      // 根据提醒类型设置相应的数据，优先使用实际计算值
       if (type === 'duration' && rule) {
-        data.durationMinutes = rule.minutes;
+        if (actualValue !== null) {
+          // 使用实际计算的时长（转换为分钟）
+          data.durationMinutes = Math.round(actualValue / (1000 * 60));
+        } else {
+          data.durationMinutes = rule.minutes;
+        }
       } else if (type === 'weekly' && rule) {
-        data.visitCount = rule.maxVisits;
+        if (actualValue !== null) {
+          // 使用实际计算的访问天数
+          data.visitCount = actualValue;
+        } else {
+          data.visitCount = rule.maxVisits;
+        }
       }
       
       console.log(`发送提醒到标签页 ${tab.id}: ${message}`, data);
@@ -329,58 +289,179 @@ class AwareMeBackground {
       return;
     }
 
-    // 检查是否有访问提醒配置
-    const reminders = this.config?.visitReminders || [];
-    const reminder = reminders.find(r => r.domains && r.domains.some(d => domain.includes(d)));
+    // 执行各种检查
+    const checkResult = await this.performAccessChecks(domain);
     
-    if (reminder) {
-      // 有访问提醒，显示提醒（这会自动移除遮罩）
-      await this.showReminder(reminder.message, 'visit', reminder);
+    if (checkResult.shouldBlock) {
+      // 显示相应的提醒
+      await this.showReminder(checkResult.message, checkResult.type, checkResult.rule, checkResult.actualValue);
       return;
-    }
-
-    // 检查是否有时长限制配置
-    const durationLimits = this.config?.durationLimits || [];
-    const durationLimit = durationLimits.find(r => r.domains && r.domains.some(d => domain.includes(d)));
-    
-    if (durationLimit) {
-      // 检查是否已达到时长限制
-      const today = new Date().toDateString();
-      const durationKey = `duration_${today}`;
-      const result = await chrome.storage.local.get([durationKey]);
-      const durations = result[durationKey] || {};
-      const todayDuration = durations[domain] || 0;
-      
-      if (todayDuration >= durationLimit.minutes * 60 * 1000) { // 转换为毫秒
-        // 已达到时长限制，显示提醒
-        await this.showReminder(durationLimit.message, 'duration', durationLimit);
-        return;
-      }
-    }
-
-    // 检查是否有周访问限制配置
-    const weeklyLimits = this.config?.weeklyLimits || [];
-    const weeklyLimit = weeklyLimits.find(r => r.domains && r.domains.some(d => domain.includes(d)));
-    
-    if (weeklyLimit) {
-      // 检查本周访问次数
-      const { monday } = AwareMeUtils.getWeekRange();
-      const weekStart = monday.toDateString();
-      const result = await chrome.storage.local.get([`weekly_${domain}_${weekStart}`]);
-      const weeklyVisits = result[`weekly_${domain}_${weekStart}`] || 0;
-      
-      if (weeklyVisits >= weeklyLimit.maxVisits) {
-        // 已达到周访问限制，显示提醒
-        await this.showReminder(weeklyLimit.message, 'weekly', weeklyLimit);
-        return;
-      }
     }
 
     // 没有任何限制或提醒，允许访问
     chrome.tabs.sendMessage(tab.id, { type: 'pageAllowed' });
     
     // 记录访问（在允许访问后）
+    await this.recordVisitWithWeeklyTracking(domain);
+  }
+
+  /**
+   * 执行所有访问检查
+   * @param {string} domain - 域名
+   * @returns {Object} - 检查结果
+   */
+  async performAccessChecks(domain) {
+    // 检查访问提醒
+    const visitReminderResult = await this.checkVisitReminderRule(domain);
+    if (visitReminderResult.shouldBlock) {
+      return visitReminderResult;
+    }
+
+    // 检查时长限制
+    const durationLimitResult = await this.checkDurationLimitRule(domain);
+    if (durationLimitResult.shouldBlock) {
+      return durationLimitResult;
+    }
+
+    // 检查周访问限制
+    const weeklyLimitResult = await this.checkWeeklyLimitRule(domain);
+    if (weeklyLimitResult.shouldBlock) {
+      return weeklyLimitResult;
+    }
+
+    return { shouldBlock: false };
+  }
+
+  /**
+   * 检查访问提醒规则
+   * @param {string} domain - 域名
+   * @returns {Object} - 检查结果
+   */
+  async checkVisitReminderRule(domain) {
+    const reminders = this.config?.visitReminders || [];
+    const reminder = reminders.find(r => r.domains && r.domains.some(d => domain.includes(d)));
+    
+    if (reminder) {
+      return {
+        shouldBlock: true,
+        message: reminder.message,
+        type: 'visit',
+        rule: reminder
+      };
+    }
+
+    return { shouldBlock: false };
+  }
+
+  /**
+   * 检查时长限制规则
+   * @param {string} domain - 域名
+   * @returns {Object} - 检查结果
+   */
+  async checkDurationLimitRule(domain) {
+    const durationLimits = this.config?.durationLimits || [];
+    const durationLimit = durationLimits.find(r => r.domains && r.domains.some(d => domain.includes(d)));
+    
+    if (durationLimit) {
+      // 计算整个组的今日访问时长
+      const todayDuration = await this.getTodayDurationForGroup(durationLimit.domains);
+      const limitMs = durationLimit.minutes * 60 * 1000;
+      
+      if (todayDuration >= limitMs) {
+        return {
+          shouldBlock: true,
+          message: durationLimit.message,
+          type: 'duration',
+          rule: durationLimit,
+          actualValue: todayDuration
+        };
+      }
+    }
+
+    return { shouldBlock: false };
+  }
+
+  /**
+   * 检查周访问限制规则
+   * @param {string} domain - 域名
+   * @returns {Object} - 检查结果
+   */
+  async checkWeeklyLimitRule(domain) {
+    const weeklyLimits = this.config?.weeklyLimits || [];
+    const weeklyLimit = weeklyLimits.find(r => r.domains && r.domains.some(d => domain.includes(d)));
+    
+    if (weeklyLimit) {
+      // 计算整个组的本周访问天数
+      const weeklyVisitedDays = await this.getWeeklyVisitsForGroup(weeklyLimit.domains);
+      
+      // 检查今天是否已经访问过组内任何域名
+      // const hasVisitedTodayInGroup = await this.hasVisitedTodayInGroup(weeklyLimit.domains);
+      
+      // 如果访问天数已达到限制，则阻止访问
+      if (weeklyVisitedDays >= weeklyLimit.maxVisits) {
+        return {
+          shouldBlock: true,
+          message: weeklyLimit.message,
+          type: 'weekly',
+          rule: weeklyLimit,
+          actualValue: weeklyVisitedDays
+        };
+      }
+    }
+
+    return { shouldBlock: false };
+  }
+
+  /**
+   * 检查今天是否已访问过组内任何域名
+   * @param {Array} domains - 域名组
+   * @returns {boolean} - 是否已访问
+   */
+  async hasVisitedTodayInGroup(domains) {
+    const today = new Date().toDateString();
+    const visitKey = `visits_${today}`;
+    
+    const result = await chrome.storage.local.get([visitKey]);
+    const visits = result[visitKey] || {};
+    
+    return domains.some(domain => visits[domain] && visits[domain] > 0);
+  }
+
+  /**
+   * 记录访问并更新周访问跟踪
+   * @param {string} domain - 域名
+   */
+  async recordVisitWithWeeklyTracking(domain) {
+    // 记录日访问
     await AwareMeStats.recordVisit(domain);
+    
+    // 更新周访问跟踪
+    await this.updateWeeklyVisitTracking(domain);
+  }
+
+  /**
+   * 更新周访问跟踪数据
+   * @param {string} domain - 域名
+   */
+  async updateWeeklyVisitTracking(domain) {
+    const { monday } = AwareMeUtils.getWeekRange();
+    const weekStart = monday.toDateString();
+    const today = new Date().toDateString();
+    
+    // 检查今天是否是本周第一次访问该域名
+    const visitKey = `visits_${today}`;
+    const result = await chrome.storage.local.get([visitKey]);
+    const visits = result[visitKey] || {};
+    
+    // 如果今天是第一次访问该域名，更新周访问计数
+    if (visits[domain] === 1) {
+      const weeklyKey = `weekly_${domain}_${weekStart}`;
+      const weeklyResult = await chrome.storage.local.get([weeklyKey]);
+      const weeklyVisits = weeklyResult[weeklyKey] || 0;
+      
+      await chrome.storage.local.set({ [weeklyKey]: weeklyVisits + 1 });
+      console.log(`更新周访问跟踪: ${domain}, 周开始: ${weekStart}, 访问天数: ${weeklyVisits + 1}`);
+    }
   }
 }
 

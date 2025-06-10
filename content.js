@@ -201,7 +201,7 @@ class AwareMeContent {
       if (closePageBtn) {
         closePageBtn.style.display = 'block';
       }
-    }, 500);
+    }, 100);
   }
 
   createReminderModal(message, type, data = {}) {
