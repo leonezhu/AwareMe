@@ -502,8 +502,17 @@ class AwareMeOptions {
     messageEl.className = `message ${type}`;
     messageEl.style.display = 'block';
     
+    // 使用requestAnimationFrame确保元素已渲染后再添加show类
+    requestAnimationFrame(() => {
+      messageEl.classList.add('show');
+    });
+    
     setTimeout(() => {
-      messageEl.style.display = 'none';
+      messageEl.classList.remove('show');
+      // 等待动画完成后隐藏元素
+      setTimeout(() => {
+        messageEl.style.display = 'none';
+      }, 300); // 与CSS transition时间一致
     }, 3000);
   }
 }
