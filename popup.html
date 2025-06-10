@@ -7,48 +7,74 @@
   <style>
     body {
       width: 320px;
-      min-height: 400px;
+      min-height: 420px; /* 稍微增加高度以容纳内容 */
       margin: 0;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
+      display: flex;
+      flex-direction: column;
     }
 
     .header {
-      padding: 20px;
+      padding: 25px 20px 20px; /* 调整内边距 */
       text-align: center;
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
+      /* background: rgba(255, 255, 255, 0.1); */ /* 移除背景，使其与body背景一致 */
+      /* backdrop-filter: blur(10px); */ /* 移除模糊，简化视觉 */
     }
 
-    .logo {
-      font-size: 32px;
-      margin-bottom: 8px;
+    .logo-container {
+      margin-bottom: 12px; /* 调整logo下方间距 */
+    }
+
+    .logo-container img {
+        display: block; /* 确保图片居中 */
+        margin: 0 auto; /* 确保图片居中 */
     }
 
     .title {
-      font-size: 20px;
+      font-size: 22px; /* 稍微增大标题字号 */
       font-weight: 600;
-      margin: 0;
+      margin: 0 0 5px 0; /* 调整标题下方间距 */
     }
 
     .subtitle {
-      font-size: 12px;
+      font-size: 13px; /* 稍微增大副标题字号 */
+      opacity: 0.85;
+      margin: 0;
+    }
+
+    .current-site {
+      padding: 15px 20px;
+      background: rgba(255, 255, 255, 0.08); /* 稍微调整透明度 */
+      margin: 0 20px 20px; /* 调整外边距 */
+      border-radius: 10px; /* 增加圆角 */
+      text-align: center; /* 文本居中 */
+    }
+
+    .current-site-title {
+      font-size: 13px; /* 稍微增大字号 */
       opacity: 0.8;
-      margin: 4px 0 0 0;
+      margin-bottom: 6px; /* 调整下方间距 */
+    }
+
+    .current-site-domain {
+      font-size: 16px; /* 增大字号 */
+      font-weight: 600;
     }
 
     .stats {
-      padding: 20px;
+      padding: 0 25px 15px; /* 调整内边距 */
+      flex-grow: 1; /* 让统计区域占据剩余空间 */
     }
 
     .stat-item {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 12px 0;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 14px 0; /* 调整内边距 */
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15); /* 稍微加深分隔线 */
     }
 
     .stat-item:last-child {
@@ -61,56 +87,52 @@
     }
 
     .stat-value {
-      font-size: 16px;
-      font-weight: 600;
+      font-size: 15px; /* 稍微调整字号 */
+      font-weight: 500; /* 调整字重 */
     }
 
     .actions {
-      padding: 0 20px 20px;
+      padding: 0 20px 25px; /* 调整内边距 */
     }
 
     .btn {
       width: 100%;
-      padding: 12px;
-      margin-bottom: 10px;
+      padding: 13px; /* 调整内边距 */
+      margin-bottom: 12px; /* 调整下方间距 */
       border: none;
-      border-radius: 8px;
-      font-size: 14px;
+      border-radius: 10px; /* 增加圆角 */
+      font-size: 15px; /* 增大字号 */
       font-weight: 500;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: all 0.2s ease-in-out; /* 平滑过渡效果 */
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1); /* 添加细微阴影 */
+    }
+
+    .btn:last-child {
+        margin-bottom: 0; /* 移除最后一个按钮的下边距 */
     }
 
     .btn-primary {
       background: white;
-      color: #667eea;
+      color: #6A5ACD; /* 使用更深的紫色以增加对比度 */
     }
 
     .btn-primary:hover {
-      background: #f8f9fa;
-      transform: translateY(-1px);
+      background: #f0f0f0; /* 调整悬停背景色 */
+      transform: translateY(-2px); /* 增加悬停效果 */
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15); /* 增加悬停阴影 */
     }
 
     .btn-secondary {
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.15); /* 调整透明度 */
       color: white;
-      border: 1px solid rgba(255, 255, 255, 0.3);
+      /* border: 1px solid rgba(255, 255, 255, 0.3); */ /* 移除边框，简化视觉 */
     }
 
     .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.3);
-      transform: translateY(-1px);
-    }
-    
-    .btn-success {
-      background: #28a745;
-      color: white;
-      border: 1px solid #28a745;
-    }
-    
-    .btn-success:hover {
-      background: #218838;
-      transform: translateY(-1px);
+      background: rgba(255, 255, 255, 0.25); /* 调整悬停背景色 */
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1); /* 增加悬停阴影 */
     }
 
     .loading {
@@ -119,36 +141,12 @@
       opacity: 0.7;
     }
 
-    .current-site {
-      padding: 15px 20px;
-      background: rgba(255, 255, 255, 0.1);
-      margin: 0 20px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-    }
-
-    .current-site-title {
-      font-size: 12px;
-      opacity: 0.8;
-      margin-bottom: 5px;
-    }
-
-    .current-site-domain {
-      font-size: 14px;
-      font-weight: 600;
-    }
-
-    .current-site-time {
-      font-size: 12px;
-      opacity: 0.8;
-      margin-top: 5px;
-    }
   </style>
 </head>
 <body>
   <div class="header">
-    <div class="logo"> 
-      <img src="assets/icons/icon16.png" alt="AwareMe Logo" width="64" height="64">
+    <div class="logo-container">
+      <img src="assets/icons/icon16.png" alt="AwareMe Logo" width="60" height="60"> <!-- 稍微调整Logo大小 -->
     </div>
     <h1 class="title">AwareMe</h1>
     <p class="subtitle">提升自我觉察，优化上网习惯</p>
@@ -169,7 +167,7 @@
       <span class="stat-value" id="todayDuration">-</span>
     </div>
     <div class="stat-item">
-      <span class="stat-label">本周访问次数</span>
+      <span class="stat-label">本周访问天数</span> <!-- 已在之前步骤中修改 -->
       <span class="stat-value" id="weeklyVisits">-</span>
     </div>
   </div>
