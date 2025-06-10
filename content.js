@@ -22,6 +22,9 @@ class AwareMeContent {
       this.reminderModal.remove();
     }
 
+    // 保存当前规则信息
+    this.currentRule = data.rule || {};
+
     // 创建提醒模态框
     this.reminderModal = this.createReminderModal(message, type, data);
     document.body.appendChild(this.reminderModal);
@@ -32,6 +35,11 @@ class AwareMeContent {
       const closePageBtn = this.reminderModal.querySelector('.awareme-close-page-btn');
       if (closeBtn) {
         closeBtn.style.display = 'block';
+        // 如果需要多次确认，显示剩余次数
+        const confirmTimes = this.currentRule?.confirmTimes || 1;
+        if (confirmTimes > 1) {
+          closeBtn.textContent = `坚持访问 (${confirmTimes})`;
+        }
       }
       if (closePageBtn) {
         closePageBtn.style.display = 'block';
@@ -251,9 +259,37 @@ class AwareMeContent {
     const settingsBtn = modal.querySelector('.awareme-settings-btn');
     const overlay = modal.querySelector('.awareme-modal-overlay');
 
+    // 获取当前规则的确认次数配置
+    const confirmTimes = this.currentRule?.confirmTimes || 1;
+    let clickCount = 0;
+    let isLoading = false;
+
     // 关闭按钮
     closeBtn.addEventListener('click', () => {
-      this.closeModal(modal);
+      if (isLoading) return; // 防止重复点击
+      
+      clickCount++;
+      
+      if (clickCount >= confirmTimes) {
+        // 达到确认次数，关闭模态框
+        this.closeModal(modal);
+        return;
+      }
+      
+      // 设置loading状态
+      isLoading = true;
+      const originalText = closeBtn.textContent;
+      closeBtn.textContent = '请稍候...';
+      closeBtn.style.opacity = '0.6';
+      closeBtn.style.cursor = 'not-allowed';
+      
+      // 0.5秒后恢复
+      setTimeout(() => {
+        isLoading = false;
+        closeBtn.textContent = `坚持访问 (${confirmTimes - clickCount})`;
+        closeBtn.style.opacity = '1';
+        closeBtn.style.cursor = 'pointer';
+      }, 500);
     });
 
     // 关闭网页按钮
@@ -279,7 +315,7 @@ class AwareMeContent {
     //     this.closeModal(modal);
     //   });
     // }, 3000);
-
+  
     // // ESC 键关闭（3秒后才能使用）
     // setTimeout(() => {
     //   const handleEscape = (e) => {

@@ -1,14 +1,14 @@
 {
   "visitReminders": [
     {
-      "groupName": "社交媒体",
+      "confirmTimes": 3,
       "domains": ["weibo1.com"],
       "message": "是为了找追热点还是纯粹打发时间？是否可以选择其他更有意义的替代？"
     }
   ],
   "durationLimits": [
     {
-      "groupName": "视频娱乐",
+      "confirmTimes": 2,
       "domains": ["bilibili2.com"],
       "minutes": 1,
       "message": "你今天在视频网站已停留超过 {{limitTime}} 分钟，是否要切换到其他计划任务？"
@@ -16,7 +16,7 @@
   ],
   "weeklyLimits": [
     {
-      "groupName": "代码托管",
+      "confirmTimes": 5,
       "domains": ["github3.com"],
       "maxVisits": 0,
       "message": "你本周已有 {{limitNum}} 天访问代码托管网站，是否需要休息或整理已学内容？"

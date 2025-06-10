@@ -122,11 +122,11 @@ class AwareMeOptions {
     this.config.visitReminders.forEach((rule, index) => {
       const row = document.createElement('tr');
       row.innerHTML = `
-        <td>
-          <input type="text" value="${rule.groupName || ''}" data-field="groupName" data-index="${index}" placeholder="组名">
+       <td>
+          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="域名列表（用逗号分隔）">${(rule.domains || []).join(', ')}</textarea>
         </td>
         <td>
-          <input type="text" value="${(rule.domains || []).join(', ')}" data-field="domains" data-index="${index}" placeholder="域名列表（用逗号分隔）">
+          <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
         </td>
         <td>
           <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
@@ -159,10 +159,10 @@ class AwareMeOptions {
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>
-          <input type="text" value="${rule.groupName || ''}" data-field="groupName" data-index="${index}" placeholder="组名">
+          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="域名列表（用逗号分隔）">${(rule.domains || []).join(', ')}</textarea>
         </td>
         <td>
-          <input type="text" value="${(rule.domains || []).join(', ')}" data-field="domains" data-index="${index}" placeholder="域名列表（用逗号分隔）">
+          <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
         </td>
         <td>
           <input type="number" value="${rule.minutes}" data-field="minutes" data-index="${index}" min="1">
@@ -191,10 +191,10 @@ class AwareMeOptions {
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>
-          <input type="text" value="${rule.groupName || ''}" data-field="groupName" data-index="${index}" placeholder="组名">
+          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="域名列表（用逗号分隔）">${(rule.domains || []).join(', ')}</textarea>
         </td>
         <td>
-          <input type="text" value="${(rule.domains || []).join(', ')}" data-field="domains" data-index="${index}" placeholder="域名列表（用逗号分隔）">
+          <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
         </td>
         <td>
           <input type="number" value="${rule.maxVisits}" data-field="maxVisits" data-index="${index}" min="0">
@@ -217,7 +217,7 @@ class AwareMeOptions {
 
   addVisitRule() {
     this.config.visitReminders.push({
-      groupName: '',
+      confirmTimes: 1,
       domains: [],
       message: ''
     });
@@ -231,7 +231,7 @@ class AwareMeOptions {
 
   addDurationRule() {
     this.config.durationLimits.push({
-      groupName: '',
+      confirmTimes: 1,
       domains: [],
       minutes: 30,
       message: ''
@@ -246,7 +246,7 @@ class AwareMeOptions {
 
   addWeeklyRule() {
     this.config.weeklyLimits.push({
-      groupName: '',
+      confirmTimes: 1,
       domains: [],
       maxVisits: 0,
       message: ''
@@ -517,10 +517,7 @@ class AwareMeOptions {
   }
 }
 
-// 全局变量，用于在HTML中访问
-const awareMeOptions = new AwareMeOptions();
-
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', () => {
-  // 初始化已在构造函数中完成
+  const awareMeOptions = new AwareMeOptions();
 });

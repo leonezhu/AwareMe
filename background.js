@@ -142,7 +142,7 @@ class AwareMeBackground {
     
     if (reminder) {
       // 移除关键词匹配检查，直接显示提醒
-      await this.showReminder(reminder.message, 'visit');
+      await this.showReminder(reminder.message, 'visit', reminder);
     }
   }
 
@@ -172,11 +172,11 @@ class AwareMeBackground {
       console.log(`域名: ${domain}, 组访问天数: ${weeklyVisitedDays}, 限制: ${limit.maxVisits}`);
       
       // 修复逻辑：当访问天数大于等于限制时就应该提醒
-      // 特别是当限制为0时，任何访问都应该触发提醒
+      // pecially when limit is 0, any visit should trigger reminder
       if (weeklyVisitedDays > limit.maxVisits) {
         console.log(`触发周访问限制提醒: ${limit.message}`);
         // 不要在这里替换{{limitNum}}，让showReminder方法来处理
-        await this.showReminder(limit.message, 'weekly');
+        await this.showReminder(limit.message, 'weekly', limit);
       }
     }
   }
@@ -244,7 +244,7 @@ class AwareMeBackground {
       const limitMs = limit.minutes * 60 * 1000;
       
       if (todayDuration >= limitMs) {
-        await this.showReminder(limit.message, 'duration');
+        await this.showReminder(limit.message, 'duration', limit);
       }
     }
   }
@@ -345,7 +345,7 @@ class AwareMeBackground {
     return durations[domain] || 0;
   }
 
-  async showReminder(message, type) {
+  async showReminder(message, type, rule = null) {
     console.log(`尝试显示提醒: type=${type}, message=${message}`);
     
     // 检查插件是否启用
@@ -378,25 +378,12 @@ class AwareMeBackground {
       const tab = tabs[0];
       const domain = this.extractDomain(tab.url);
       
-      console.log(`当前标签页域名: ${domain}`);
-      
       // 替换消息中的占位符
       let finalMessage = message;
-      
-      if (type === 'duration') {
-        // 获取当前域名的今日浏览时长
-        const todayDuration = await this.getTodayDuration(domain);
-        const minutes = Math.floor(todayDuration / 60000);
-        finalMessage = message.replace(/{{limitTime}}/g, minutes);
-      } else if (type === 'weekly') {
-        // 对于周访问限制，需要找到包含当前域名的组，然后获取组的访问天数
-        const weeklyLimits = this.config?.weeklyLimits || [];
-        const limit = weeklyLimits.find(l => l.domains.includes(domain));
-        if (limit) {
-          const weeklyVisitedDays = await this.getWeeklyVisitsForGroup(limit.domains);
-          finalMessage = message.replace(/{{limitNum}}/g, weeklyVisitedDays);
-          console.log(`替换后的消息: ${finalMessage}`);
-        }
+      if (type === 'duration' && rule) {
+        finalMessage = message.replace(/\{\{limitNum\}\}/g, rule.minutes);
+      } else if (type === 'weekly' && rule) {
+        finalMessage = message.replace(/\{\{limitNum\}\}/g, rule.maxVisits);
       }
       
       console.log(`发送提醒到标签页 ${tab.id}: ${finalMessage}`);
@@ -404,7 +391,9 @@ class AwareMeBackground {
       // 发送消息到内容脚本显示提醒
       chrome.tabs.sendMessage(tab.id, {
         type: 'showReminder',
-        message: finalMessage
+        message: finalMessage,
+        reminderType: type,
+        data: { rule: rule }
       });
     } catch (error) {
       console.error('显示提醒失败:', error);
