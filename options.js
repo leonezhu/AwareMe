@@ -114,6 +114,7 @@ class AwareMeOptions {
 
     this.config.visitReminders.forEach((rule, index) => {
       const row = document.createElement('tr');
+      const isEnabled = rule.status !== false; // 默认启用
       row.innerHTML = `
        <td>
           <textarea data-field="domains" data-index="${index}" rows="2" placeholder="域名列表（用逗号分隔）">${(rule.domains || []).join(', ')}</textarea>
@@ -125,10 +126,18 @@ class AwareMeOptions {
           <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
         </td>
         <td>
+          <button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-visit-status" data-index="${index}">
+            ${isEnabled ? '关闭' : '启用'}
+          </button>
           <button class="btn btn-danger btn-small delete-visit-rule" data-index="${index}">删除</button>
         </td>
       `;
       tbody.appendChild(row);
+
+      // 绑定状态切换事件
+      row.querySelector('.toggle-visit-status').addEventListener('click', () => {
+        this.toggleVisitRuleStatus(index);
+      });
 
       // 绑定删除规则事件
       row.querySelector('.delete-visit-rule').addEventListener('click', () => {
@@ -150,6 +159,7 @@ class AwareMeOptions {
 
     this.config.durationLimits.forEach((rule, index) => {
       const row = document.createElement('tr');
+      const isEnabled = rule.status !== false; // 默认启用
       row.innerHTML = `
         <td>
           <textarea data-field="domains" data-index="${index}" rows="2" placeholder="域名列表（用逗号分隔）">${(rule.domains || []).join(', ')}</textarea>
@@ -164,10 +174,18 @@ class AwareMeOptions {
           <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
         </td>
         <td>
+          <button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-duration-status" data-index="${index}">
+            ${isEnabled ? '关闭' : '启用'}
+          </button>
           <button class="btn btn-danger btn-small delete-duration-rule" data-index="${index}">删除</button>
         </td>
       `;
       tbody.appendChild(row);
+
+      // 绑定状态切换事件
+      row.querySelector('.toggle-duration-status').addEventListener('click', () => {
+        this.toggleDurationRuleStatus(index);
+      });
 
       // 绑定删除规则事件
       row.querySelector('.delete-duration-rule').addEventListener('click', () => {
@@ -182,6 +200,7 @@ class AwareMeOptions {
 
     this.config.weeklyLimits.forEach((rule, index) => {
       const row = document.createElement('tr');
+      const isEnabled = rule.status !== false; // 默认启用
       row.innerHTML = `
         <td>
           <textarea data-field="domains" data-index="${index}" rows="2" placeholder="域名列表（用逗号分隔）">${(rule.domains || []).join(', ')}</textarea>
@@ -196,10 +215,18 @@ class AwareMeOptions {
           <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
         </td>
         <td>
+          <button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-weekly-status" data-index="${index}">
+            ${isEnabled ? '关闭' : '启用'}
+          </button>
           <button class="btn btn-danger btn-small delete-weekly-rule" data-index="${index}">删除</button>
         </td>
       `;
       tbody.appendChild(row);
+
+      // 绑定状态切换事件
+      row.querySelector('.toggle-weekly-status').addEventListener('click', () => {
+        this.toggleWeeklyRuleStatus(index);
+      });
 
       // 绑定删除规则事件
       row.querySelector('.delete-weekly-rule').addEventListener('click', () => {
@@ -212,7 +239,8 @@ class AwareMeOptions {
     this.config.visitReminders.push({
       confirmTimes: 1,
       domains: [],
-      message: ''
+      message: '',
+      status: true
     });
     this.renderVisitTable();
   }
@@ -227,7 +255,8 @@ class AwareMeOptions {
       confirmTimes: 1,
       domains: [],
       minutes: 30,
-      message: ''
+      message: '',
+      status: true
     });
     this.renderDurationTable();
   }
@@ -242,7 +271,8 @@ class AwareMeOptions {
       confirmTimes: 1,
       domains: [],
       maxVisits: 0,
-      message: ''
+      message: '',
+      status: true
     });
     this.renderWeeklyTable();
   }
@@ -250,6 +280,30 @@ class AwareMeOptions {
   removeWeeklyRule(index) {
     this.config.weeklyLimits.splice(index, 1);
     this.renderWeeklyTable();
+  }
+
+  toggleVisitRuleStatus(index) {
+    if (this.config.visitReminders[index]) {
+      this.config.visitReminders[index].status = !this.config.visitReminders[index].status;
+      this.renderVisitTable();
+      this.saveConfig();
+    }
+  }
+
+  toggleDurationRuleStatus(index) {
+    if (this.config.durationLimits[index]) {
+      this.config.durationLimits[index].status = !this.config.durationLimits[index].status;
+      this.renderDurationTable();
+      this.saveConfig();
+    }
+  }
+
+  toggleWeeklyRuleStatus(index) {
+    if (this.config.weeklyLimits[index]) {
+      this.config.weeklyLimits[index].status = !this.config.weeklyLimits[index].status;
+      this.renderWeeklyTable();
+      this.saveConfig();
+    }
   }
 
   saveVisitConfig() {

@@ -341,7 +341,7 @@ class AwareMeBackground {
     const reminders = this.config?.visitReminders || [];
     const reminder = reminders.find(r => r.domains && r.domains.some(d => domain.includes(d)));
     
-    if (reminder) {
+    if (reminder && reminder.status !== false) {
       return {
         shouldBlock: true,
         message: reminder.message,
@@ -362,7 +362,7 @@ class AwareMeBackground {
     const durationLimits = this.config?.durationLimits || [];
     const durationLimit = durationLimits.find(r => r.domains && r.domains.some(d => domain.includes(d)));
     
-    if (durationLimit) {
+    if (durationLimit && durationLimit.status !== false) {
       // 计算整个组的今日访问时长
       const todayDuration = await this.getTodayDurationForGroup(durationLimit.domains);
       const limitMs = durationLimit.minutes * 60 * 1000;
@@ -390,7 +390,7 @@ class AwareMeBackground {
     const weeklyLimits = this.config?.weeklyLimits || [];
     const weeklyLimit = weeklyLimits.find(r => r.domains && r.domains.some(d => domain.includes(d)));
     
-    if (weeklyLimit) {
+    if (weeklyLimit && weeklyLimit.status !== false) {
       // 计算整个组的本周访问天数
       const weeklyVisitedDays = await this.getWeeklyVisitsForGroup(weeklyLimit.domains);
       
