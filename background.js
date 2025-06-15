@@ -63,6 +63,11 @@ class AwareMeBackground {
       this.handleTabActivated(activeInfo.tabId);
     });
 
+    // 监听标签页关闭
+    chrome.tabs.onRemoved.addListener((tabId) => {
+      this.handleTabRemoved(tabId);
+    });
+
     // 监听窗口焦点变化
     chrome.windows.onFocusChanged.addListener((windowId) => {
       if (windowId === chrome.windows.WINDOW_ID_NONE) {
@@ -76,6 +81,19 @@ class AwareMeBackground {
     setInterval(() => {
       this.checkDurationLimits();
     }, 60000); // 每分钟检查一次
+    
+    // 获取当前活跃标签页
+    this.getCurrentActiveTab();
+  }
+
+  // 获取当前活跃标签页
+  getCurrentActiveTab() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs.length > 0) {
+        this.activeTabId = tabs[0].id;
+        this.startTime = Date.now();
+      }
+    });
   }
 
   async loadConfig() {
@@ -149,25 +167,39 @@ class AwareMeBackground {
     this.startTime = Date.now();
   }
 
+  async handleTabRemoved(tabId) {
+    // 如果关闭的是当前活跃标签页，记录时长
+    if (this.activeTabId === tabId && this.startTime) {
+      await this.recordDuration(tabId, Date.now() - this.startTime);
+      this.activeTabId = null;
+      this.startTime = null;
+    }
+  }
+
   handleWindowBlur() {
     // 窗口失去焦点，暂停计时
     if (this.activeTabId && this.startTime) {
       this.recordDuration(this.activeTabId, Date.now() - this.startTime);
+      this.activeTabId = null;
       this.startTime = null;
     }
   }
 
   handleWindowFocus() {
     // 窗口获得焦点，重新开始计时
-    if (this.activeTabId) {
-      this.startTime = Date.now();
-    }
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs.length > 0) {
+        this.activeTabId = tabs[0].id;
+        this.startTime = Date.now();
+      }
+    });
   }
 
   async recordDuration(tabId, duration) {
     try {
       const tab = await chrome.tabs.get(tabId);
       const domain = AwareMeUtils.extractDomain(tab.url);
+      
       if (!domain) return;
 
       const today = new Date().toDateString();
@@ -194,7 +226,7 @@ class AwareMeBackground {
       if (!domain) return;
 
       const limits = this.config?.durationLimits || [];
-      const limit = limits.find(l => domain.includes(l.domain));
+      const limit = limits.find(l => l.domain && domain.includes(l.domain));
       
       if (limit) {
         const todayDuration = await AwareMeStats.getTodayDuration(domain);
