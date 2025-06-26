@@ -639,7 +639,9 @@ class AwareMeContent {
     // 设置按钮
     settingsBtn.addEventListener('click', () => {
       chrome.runtime.sendMessage({ type: 'openOptions' });
-      this.closeModal(modal);
+      // 不关闭模态框，保持拦截状态
+      // 添加页面可见性监听，当用户从设置页面返回时重新显示模态框
+      this.handleSettingsNavigation(modal);
     });
 
     // 点击遮罩层关闭（3秒后才能点击）
@@ -659,6 +661,57 @@ class AwareMeContent {
     //   };
     //   document.addEventListener('keydown', handleEscape);
     // }, 3000);
+  }
+
+  handleSettingsNavigation(modal) {
+    console.log('AwareMe: 处理设置页面导航，隐藏模态框但保持拦截状态');
+    
+    // 隐藏模态框但不移除
+    modal.style.display = 'none';
+    
+    // 如果没有加载遮罩，创建一个以保持拦截状态
+    if (!this.loadingOverlay) {
+      console.log('AwareMe: 创建加载遮罩以保持拦截状态');
+      this.createLoadingOverlay();
+      this.setupOverlayProtection();
+    }
+    
+    // 监听页面可见性变化
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('AwareMe: 页面重新可见，恢复提醒模态框');
+        // 页面重新可见时，重新显示模态框并移除加载遮罩
+        setTimeout(() => {
+          if (modal && modal.parentNode) {
+            modal.style.display = 'block';
+            // 移除加载遮罩，因为提醒模态框已经显示
+            this.removeLoadingOverlay();
+          }
+        }, 500); // 延迟500ms确保页面完全加载
+        
+        // 移除监听器
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // 备用方案：监听窗口焦点变化
+    const handleFocus = () => {
+      console.log('AwareMe: 窗口重新获得焦点，恢复提醒模态框');
+      setTimeout(() => {
+        if (modal && modal.parentNode) {
+          modal.style.display = 'block';
+          // 移除加载遮罩，因为提醒模态框已经显示
+          this.removeLoadingOverlay();
+        }
+      }, 500);
+      
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+    
+    window.addEventListener('focus', handleFocus);
   }
 
   closeModal(modal) {

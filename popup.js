@@ -81,6 +81,45 @@ class AwareMePopup {
       window.close();
     });
 
+    // 清理旧数据
+    document.getElementById('cleanupData').addEventListener('click', async () => {
+      const button = document.getElementById('cleanupData');
+      const originalText = button.textContent;
+      
+      try {
+        button.textContent = '清理中...';
+        button.disabled = true;
+        
+        const response = await chrome.runtime.sendMessage({ type: 'cleanupOldRecords' });
+        
+        if (response.success) {
+          const result = response.result;
+          if (result.totalDeleted > 0) {
+            button.textContent = `已清理 ${result.totalDeleted} 条`;
+            // 重新加载当前网站数据以反映清理后的状态
+            await this.loadCurrentSite();
+          } else {
+            button.textContent = '无需清理';
+          }
+        } else {
+          button.textContent = '清理失败';
+        }
+        
+        // 2秒后恢复按钮状态
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.disabled = false;
+        }, 2000);
+      } catch (error) {
+        console.error('清理数据失败:', error);
+        button.textContent = '清理失败';
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.disabled = false;
+        }, 2000);
+      }
+    });
+
     // 切换插件启用/禁用状态
     document.getElementById('disableExtension').addEventListener('click', async () => {
       try {

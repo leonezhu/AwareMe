@@ -310,6 +310,75 @@ class AwareMeStats {
     
     return { visitData, durationData, domains: Array.from(domains) };
   }
+
+  /**
+   * 清理非本周的访问记录和时长记录
+   * @returns {Object} - 清理结果统计
+   */
+  static async cleanupOldRecords() {
+    console.log('开始清理非本周的访问记录');
+    
+    const { monday, sunday } = AwareMeUtils.getWeekRange();
+    const allStorageData = await chrome.storage.local.get();
+    const keysToDelete = [];
+    let visitRecordsDeleted = 0;
+    let durationRecordsDeleted = 0;
+    
+    // 生成本周所有日期的字符串集合
+    const thisWeekDates = new Set();
+    for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
+      thisWeekDates.add(d.toDateString());
+    }
+    
+    // 检查所有存储的键
+    for (const key of Object.keys(allStorageData)) {
+      if (key.startsWith('visits_')) {
+        // 提取日期部分
+        const dateStr = key.replace('visits_', '');
+        if (!thisWeekDates.has(dateStr)) {
+          keysToDelete.push(key);
+          visitRecordsDeleted++;
+          console.log(`标记删除访问记录: ${key} (日期: ${dateStr})`);
+        }
+      } else if (key.startsWith('duration_')) {
+        // 提取日期部分
+        const dateStr = key.replace('duration_', '');
+        if (!thisWeekDates.has(dateStr)) {
+          keysToDelete.push(key);
+          durationRecordsDeleted++;
+          console.log(`标记删除时长记录: ${key} (日期: ${dateStr})`);
+        }
+      } else if (key.startsWith('weekly_')) {
+        // 清理旧的周访问跟踪记录
+        // weekly_${domain}_${weekStart} 格式
+        const parts = key.split('_');
+        if (parts.length >= 3) {
+          const weekStartStr = parts.slice(2).join('_');
+          const weekStartDate = new Date(weekStartStr);
+          // 如果不是当前周的记录，删除
+          if (weekStartDate.getTime() !== monday.getTime()) {
+            keysToDelete.push(key);
+            console.log(`标记删除周访问跟踪记录: ${key}`);
+          }
+        }
+      }
+    }
+    
+    // 批量删除
+    if (keysToDelete.length > 0) {
+      await chrome.storage.local.remove(keysToDelete);
+      console.log(`清理完成，删除了 ${keysToDelete.length} 条记录`);
+    } else {
+      console.log('没有需要清理的记录');
+    }
+    
+    return {
+      totalDeleted: keysToDelete.length,
+      visitRecordsDeleted,
+      durationRecordsDeleted,
+      weeklyRecordsDeleted: keysToDelete.length - visitRecordsDeleted - durationRecordsDeleted
+    };
+  }
 }
 
 // 如果在浏览器环境中，将工具类添加到全局

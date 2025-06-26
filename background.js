@@ -33,6 +33,17 @@ class AwareMeBackground {
         sendResponse({ success: true, isEnabled: this.isEnabled });
       } else if (message.type === 'getExtensionStatus') {
         sendResponse({ isEnabled: this.isEnabled });
+      } else if (message.type === 'cleanupOldRecords') {
+        // 处理清理旧记录请求
+        this.cleanupOldRecords()
+          .then((result) => {
+            sendResponse({ success: true, result });
+          })
+          .catch((error) => {
+            console.error('清理旧记录失败:', error);
+            sendResponse({ success: false, error: error.message });
+          });
+        return true; // 异步响应
       } else if (message.type === 'checkCurrentPage') {
         // 处理页面检查请求 - 确保初始化完成后再处理
         console.log('收到页面检查请求:', message.url, '初始化状态:', this.isInitializing);
@@ -93,6 +104,11 @@ class AwareMeBackground {
       this.checkDurationLimits();
     }, 60000); // 每分钟检查一次
     
+    // 定时清理旧记录（每小时检查一次）
+    setInterval(() => {
+      this.cleanupOldRecords();
+    }, 3600000); // 每小时检查一次
+    
     // 获取当前活跃标签页
     this.getCurrentActiveTab();
   }
@@ -122,6 +138,9 @@ class AwareMeBackground {
         configLoaded: !!this.config,
         isEnabled: this.isEnabled
       });
+      
+      // 初始化完成后立即执行一次清理
+      this.cleanupOldRecords();
     } catch (error) {
       console.error('AwareMe Background 初始化失败:', error);
       this.isInitializing = false;
@@ -593,6 +612,26 @@ class AwareMeBackground {
       
       await chrome.storage.local.set({ [weeklyKey]: weeklyVisits + 1 });
       console.log(`更新周访问跟踪: ${domain}, 周开始: ${weekStart}, 访问天数: ${weeklyVisits + 1}`);
+    }
+  }
+
+  /**
+   * 清理非本周的访问记录
+   */
+  async cleanupOldRecords() {
+    try {
+      const result = await AwareMeStats.cleanupOldRecords();
+      if (result.totalDeleted > 0) {
+        console.log(`清理完成: 删除了 ${result.totalDeleted} 条记录`, {
+          访问记录: result.visitRecordsDeleted,
+          时长记录: result.durationRecordsDeleted,
+          周访问记录: result.weeklyRecordsDeleted
+        });
+      }
+      return result;
+    } catch (error) {
+      console.error('清理旧记录失败:', error);
+      throw error;
     }
   }
 }
