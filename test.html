@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AwareMe 测试页面</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007AFF;
+        }
+        .problem {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+        }
+        .solution {
+            background: #d1edff;
+            border-left-color: #0084ff;
+        }
+        .fixed {
+            background: #d4edda;
+            border-left-color: #28a745;
+        }
+        code {
+            background: #f1f3f4;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        .code-block {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+        .highlight {
+            background: #fff3cd;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔧 AwareMe 插件修复报告</h1>
+        <p>解决 weibo.com 访问权限检查问题</p>
+    </div>
+
+    <div class="section problem">
+        <h2>🐛 问题描述</h2>
+        <p>用户报告的问题：</p>
+        <ul>
+            <li>每天第一次打开被拦截的网站 <code>weibo.com</code> 时，会一直显示"正在检查访问权限"的蒙版</li>
+            <li>插件在 <code>background.js</code> 中报错：<code>Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist.</code></li>
+        </ul>
+    </div>
+
+    <div class="section solution">
+        <h2>🔍 问题分析</h2>
+        <p>经过代码分析，发现问题的根本原因：</p>
+        <ol>
+            <li><strong>消息发送时机问题</strong>：background script 向 content script 发送消息时，content script 可能还未完全加载</li>
+            <li><strong>错误处理不当</strong>：没有正确处理 Chrome 扩展的连接错误</li>
+            <li><strong>重试机制过度</strong>：content script 的重试次数过多，延迟过长</li>
+            <li><strong>缺少超时保护</strong>：没有超时机制防止遮罩一直显示</li>
+        </ol>
+    </div>
+
+    <div class="section fixed">
+        <h2>✅ 修复方案</h2>
+        <h3>1. 添加安全的消息发送机制</h3>
+        <p>在 <code>background.js</code> 中添加了 <code>sendMessageToTab</code> 方法：</p>
+        <div class="code-block">
+            <code>
+            sendMessageToTab(tabId, message) {<br>
+            &nbsp;&nbsp;chrome.tabs.sendMessage(tabId, message, (response) => {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;if (chrome.runtime.lastError) {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// 忽略连接错误，避免抛出异常<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.log(`发送消息失败: ${chrome.runtime.lastError.message}`);<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+            &nbsp;&nbsp;});<br>
+            }
+            </code>
+        </div>
+
+        <h3>2. 优化重试机制</h3>
+        <p>改进 <code>content.js</code> 中的重试逻辑：</p>
+        <ul>
+            <li>减少最大重试次数：从 5 次降至 3 次</li>
+            <li>缩短重试间隔：500ms, 1s, 2s（原来是 1s, 2s, 4s, 8s, 16s）</li>
+            <li>针对性处理"Receiving end does not exist"错误</li>
+        </ul>
+
+        <h3>3. 添加超时保护机制</h3>
+        <p>在 <code>content.js</code> 中添加 10 秒超时：</p>
+        <div class="code-block">
+            <code>
+            setupOverlayTimeout() {<br>
+            &nbsp;&nbsp;this.overlayTimeout = setTimeout(() => {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;if (this.loadingOverlay && !this.isPageAllowed) {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.warn('检查超时，自动移除遮罩');<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;this.removeLoadingOverlay();<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+            &nbsp;&nbsp;}, 10000);<br>
+            }
+            </code>
+        </div>
+
+        <h3>4. 改善消息处理</h3>
+        <p>在 background script 的消息监听器中返回 <code>true</code>，表示异步处理响应。</p>
+    </div>
+
+    <div class="section fixed">
+        <h2>🎯 修复效果</h2>
+        <p>修复后的改进：</p>
+        <ul>
+            <li>✅ <strong>消除连接错误</strong>：正确处理 Chrome 扩展消息传递的异步特性</li>
+            <li>✅ <strong>减少等待时间</strong>：优化重试机制，更快响应</li>
+            <li>✅ <strong>防止卡死</strong>：添加超时保护，确保用户不会被永久阻塞</li>
+            <li>✅ <strong>提升用户体验</strong>：减少不必要的延迟和错误提示</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>🧪 测试建议</h2>
+        <p>建议进行以下测试：</p>
+        <ol>
+            <li>重新加载插件（在 Chrome 扩展管理页面）</li>
+            <li>访问配置中的受限网站（如 weibo.com）</li>
+            <li>观察控制台是否还有连接错误</li>
+            <li>验证遮罩是否能正常显示和消失</li>
+            <li>测试在网络较慢情况下的表现</li>
+        </ol>
+    </div>
+
+    <div class="section">
+        <h2>📝 技术说明</h2>
+        <p>此次修复主要解决了 Chrome 扩展开发中常见的消息传递问题：</p>
+        <ul>
+            <li><span class="highlight">Service Worker 生命周期</span>：Manifest V3 中的 background script 是 service worker，可能会被浏览器暂停和恢复</li>
+            <li><span class="highlight">Content Script 注入时机</span>：虽然设置了 <code>document_start</code>，但仍可能存在时序问题</li>
+            <li><span class="highlight">异步消息处理</span>：需要正确处理 Chrome API 的异步特性</li>
+        </ul>
+    </div>
+
+    <script>
+        // 简单的页面交互
+        console.log('AwareMe 测试页面已加载');
+        
+        // 检查插件是否正常工作
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+            console.log('Chrome 扩展 API 可用');
+        } else {
+            console.log('Chrome 扩展 API 不可用');
+        }
+    </script>
+</body>
+</html>

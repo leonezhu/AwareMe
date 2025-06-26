@@ -4,19 +4,31 @@ class AwareMeContent {
   constructor() {
     this.reminderModal = null;
     this.loadingOverlay = null;
+    this.mutationObserver = null;
+    this.isPageAllowed = false;
+    this.retryCount = 0;
+    this.maxRetries = 3;
     this.init();
   }
 
   async init() {
+    console.log('AwareMe: Content script 初始化开始');
+    
     // 先检查当前域名是否需要监控，只有需要监控的域名才显示遮罩
     const shouldShowOverlay = await this.shouldShowLoadingOverlay();
     
     if (shouldShowOverlay) {
       // 立即创建加载遮罩（在document_start阶段）
       this.createLoadingOverlay();
+      this.setupOverlayProtection();
+      
+      // 设置超时机制，防止遮罩一直显示
+      this.setupOverlayTimeout();
       
       // 立即异步检查页面访问权限，不等待DOM加载完成
       this.checkCurrentPage();
+    } else {
+      console.log('AwareMe: 当前页面不需要监控');
     }
     
     // 等待DOM加载完成后再进行其他初始化
@@ -36,10 +48,17 @@ class AwareMeContent {
         sendResponse({ success: true });
       } else if (message.type === 'pageAllowed') {
         // 页面被允许访问，移除遮罩
+        console.log('AwareMe: 收到页面允许访问消息');
+        this.isPageAllowed = true;
         this.removeLoadingOverlay();
         sendResponse({ success: true });
       }
     });
+    
+    // 添加页面卸载保护
+    this.setupUnloadProtection();
+    
+    console.log('AwareMe: Content script 初始化完成');
   }
 
   async shouldShowLoadingOverlay() {
@@ -47,28 +66,42 @@ class AwareMeContent {
       // 获取当前域名
       const currentDomain = AwareMeUtils.extractDomain(window.location.href);
       if (!currentDomain) {
+        console.log('AwareMe: 无法提取域名，不显示遮罩');
         return false;
       }
 
-      // 获取用户配置
+      console.log(`AwareMe: 检查域名 ${currentDomain} 是否需要监控`);
+
+      // 获取用户配置和插件状态
       const result = await chrome.storage.local.get(['userConfig', 'isEnabled']);
       const userConfig = result.userConfig;
       const isEnabled = result.isEnabled;
 
       // 如果插件未启用，不显示遮罩
-      if (!isEnabled) {
+      if (isEnabled === false) {
+        console.log('AwareMe: 插件未启用，不显示遮罩');
         return false;
       }
 
-      // 如果没有配置，不显示遮罩
-      if (!userConfig) {
+      // 如果没有配置，尝试加载默认配置
+      let configToCheck = userConfig;
+      if (!configToCheck) {
+        console.log('AwareMe: 用户配置不存在，尝试加载默认配置');
+        configToCheck = await AwareMeUtils.loadConfig();
+      }
+
+      // 如果仍然没有配置，不显示遮罩
+      if (!configToCheck) {
+        console.log('AwareMe: 无法加载任何配置，不显示遮罩');
         return false;
       }
 
       // 使用工具类检查域名是否在配置中
-      return AwareMeUtils.isDomainConfigured(currentDomain, userConfig);
+      const shouldShow = AwareMeUtils.isDomainConfigured(currentDomain, configToCheck);
+      console.log(`AwareMe: 域名 ${currentDomain} ${shouldShow ? '需要' : '不需要'} 监控`);
+      return shouldShow;
     } catch (error) {
-      console.error('检查是否显示遮罩失败:', error);
+      console.error('AwareMe: 检查是否显示遮罩失败:', error);
       // 出错时不显示遮罩
       return false;
     }
@@ -157,20 +190,163 @@ class AwareMeContent {
 
   removeLoadingOverlay() {
     if (this.loadingOverlay) {
+      console.log('AwareMe: 移除加载遮罩');
+      // 停止监控
+      if (this.mutationObserver) {
+        this.mutationObserver.disconnect();
+        this.mutationObserver = null;
+      }
+      // 清除超时定时器
+      if (this.overlayTimeout) {
+        clearTimeout(this.overlayTimeout);
+        this.overlayTimeout = null;
+      }
       this.loadingOverlay.remove();
       this.loadingOverlay = null;
     }
   }
 
+  setupOverlayTimeout() {
+    // 设置15秒超时，防止遮罩一直显示，给background script更多初始化时间
+    this.overlayTimeout = setTimeout(() => {
+      if (this.loadingOverlay && !this.isPageAllowed) {
+        console.warn('AwareMe: 检查超时，自动移除遮罩允许访问');
+        this.isPageAllowed = true;
+        this.removeLoadingOverlay();
+      }
+    }, 15000); // 15秒超时
+  }
+
   async checkCurrentPage() {
     // 发送消息给background检查当前页面
-    try {
-      await chrome.runtime.sendMessage({ type: 'checkCurrentPage', url: window.location.href });
-    } catch (error) {
-      console.error('检查页面失败:', error);
-      // 如果检查失败，移除遮罩允许访问
-      this.removeLoadingOverlay();
-    }
+    const maxRetries = 5; // 增加重试次数
+    let retryCount = 0;
+    
+    const attemptCheck = async () => {
+      try {
+        console.log(`AwareMe: 发送页面检查请求 (第${retryCount + 1}次)`);
+        
+        // 使用Promise包装sendMessage以便更好地处理错误
+        const response = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage(
+            { type: 'checkCurrentPage', url: window.location.href },
+            (response) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+              } else {
+                resolve(response);
+              }
+            }
+          );
+        });
+        
+        console.log('AwareMe: 页面检查请求发送成功');
+      } catch (error) {
+        console.error(`AwareMe: 页面检查失败 (第${retryCount + 1}次):`, error);
+        
+        // 如果是"Receiving end does not exist"错误，说明background script还未准备好
+        if (error.message.includes('Receiving end does not exist') || 
+            error.message.includes('Extension context invalidated')) {
+          if (retryCount < maxRetries) {
+            retryCount++;
+            // 更长的重试间隔：200ms, 500ms, 1s, 2s, 3s
+            const delays = [200, 500, 1000, 2000, 3000];
+            const delay = delays[retryCount - 1] || 3000;
+            console.log(`AwareMe: Background script未准备好，${delay}ms后重试`);
+            setTimeout(attemptCheck, delay);
+          } else {
+            console.warn('AwareMe: Background script长时间未响应，允许访问页面');
+            this.isPageAllowed = true;
+            this.removeLoadingOverlay();
+          }
+        } else {
+          // 其他类型的错误，直接允许访问
+          console.warn('AwareMe: 检查过程中发生未知错误，允许访问页面');
+          this.isPageAllowed = true;
+          this.removeLoadingOverlay();
+        }
+      }
+    };
+    
+    await attemptCheck();
+  }
+
+  setupOverlayProtection() {
+    if (!this.loadingOverlay) return;
+    
+    console.log('AwareMe: 设置遮罩保护机制');
+    
+    // 使用MutationObserver监控遮罩是否被移除
+    this.mutationObserver = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList') {
+          // 检查遮罩是否还在DOM中
+          if (this.loadingOverlay && !document.contains(this.loadingOverlay)) {
+            if (!this.isPageAllowed && this.retryCount < this.maxRetries) {
+              console.log(`AwareMe: 检测到遮罩被移除，重新创建 (第${this.retryCount + 1}次)`);
+              this.retryCount++;
+              this.createLoadingOverlay();
+              this.setupOverlayProtection();
+            }
+          }
+        }
+      });
+    });
+    
+    // 监控整个document的变化
+    this.mutationObserver.observe(document, {
+      childList: true,
+      subtree: true
+    });
+    
+    // 定期检查遮罩状态
+    const checkInterval = setInterval(() => {
+      if (this.isPageAllowed) {
+        clearInterval(checkInterval);
+        return;
+      }
+      
+      if (this.loadingOverlay && !document.contains(this.loadingOverlay)) {
+        if (this.retryCount < this.maxRetries) {
+          console.log(`AwareMe: 定期检查发现遮罩丢失，重新创建 (第${this.retryCount + 1}次)`);
+          this.retryCount++;
+          this.createLoadingOverlay();
+          this.setupOverlayProtection();
+        }
+      }
+    }, 1000);
+  }
+
+  setupUnloadProtection() {
+    // 防止页面跳转绕过检查
+    window.addEventListener('beforeunload', (event) => {
+      if (this.loadingOverlay && !this.isPageAllowed) {
+        console.log('AwareMe: 页面尝试卸载，但检查未完成');
+        event.preventDefault();
+        event.returnValue = '页面正在进行安全检查，请稍候...';
+        return '页面正在进行安全检查，请稍候...';
+      }
+    });
+    
+    // 防止通过修改location绕过
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    
+    history.pushState = function(...args) {
+      if (window.awareMe && window.awareMe.loadingOverlay && !window.awareMe.isPageAllowed) {
+        console.log('AwareMe: 阻止history.pushState操作');
+        return;
+      }
+      return originalPushState.apply(this, args);
+    };
+    
+    history.replaceState = function(...args) {
+      if (window.awareMe && window.awareMe.loadingOverlay && !window.awareMe.isPageAllowed) {
+        console.log('AwareMe: 阻止history.replaceState操作');
+        return;
+      }
+      return originalReplaceState.apply(this, args);
+    };
   }
 
   showReminderModal(message, type, data = {}) {
@@ -503,4 +679,4 @@ class AwareMeContent {
 }
 
 // 初始化内容脚本
-new AwareMeContent();
+window.awareMe = new AwareMeContent();

@@ -132,15 +132,38 @@ class AwareMeUtils {
     try {
       const result = await chrome.storage.local.get(['userConfig']);
       if (result.userConfig) {
+        console.log('加载用户配置成功');
         return result.userConfig;
       } else {
-        // 加载默认配置
-        const response = await fetch(chrome.runtime.getURL('data/default-config.json'));
-        return await response.json();
+        console.log('用户配置不存在，尝试加载默认配置');
+        // 尝试加载默认配置
+        try {
+          const response = await fetch(chrome.runtime.getURL('data/default-config.json'));
+          if (response.ok) {
+            const defaultConfig = await response.json();
+            console.log('加载默认配置成功');
+            return defaultConfig;
+          } else {
+            throw new Error(`HTTP ${response.status}`);
+          }
+        } catch (fetchError) {
+          console.warn('默认配置文件不存在或加载失败，返回空配置:', fetchError.message);
+          // 返回空配置，这样插件仍然可以正常工作，只是没有任何规则
+          return {
+            visitReminders: [],
+            durationLimits: [],
+            weeklyLimits: []
+          };
+        }
       }
     } catch (error) {
       console.error('加载配置失败:', error);
-      return null;
+      // 返回空配置而不是null，确保插件可以继续工作
+      return {
+        visitReminders: [],
+        durationLimits: [],
+        weeklyLimits: []
+      };
     }
   }
 }

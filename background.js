@@ -13,11 +13,9 @@ class AwareMeBackground {
   }
 
   async init() {
-    // 加载配置
-    await this.loadConfig();
-    
-    // 加载插件启用状态
-    await this.loadExtensionStatus();
+    // 标记初始化状态
+    this.isInitializing = true;
+    this.initializationPromise = this.performInitialization();
     
     // 监听来自内容脚本的消息
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -36,10 +34,23 @@ class AwareMeBackground {
       } else if (message.type === 'getExtensionStatus') {
         sendResponse({ isEnabled: this.isEnabled });
       } else if (message.type === 'checkCurrentPage') {
-        // 处理页面检查请求
-        this.handlePageCheck(message.url, sender.tab);
-        sendResponse({ success: true });
+        // 处理页面检查请求 - 确保初始化完成后再处理
+        console.log('收到页面检查请求:', message.url, '初始化状态:', this.isInitializing);
+        this.handlePageCheckWithInit(message.url, sender.tab)
+          .then(() => {
+            sendResponse({ success: true });
+          })
+          .catch((error) => {
+            console.error('页面检查处理失败:', error);
+            // 即使处理失败，也要发送响应避免content script等待超时
+            sendResponse({ success: false, error: error.message });
+          });
+        // 返回true表示异步处理响应
+        return true;
       }
+      
+      // 返回true表示异步处理响应
+      return true;
     });
     
     // 监听配置变更
@@ -96,8 +107,63 @@ class AwareMeBackground {
     });
   }
 
+  async performInitialization() {
+    try {
+      console.log('AwareMe Background 开始初始化');
+      
+      // 加载配置
+      await this.loadConfig();
+      
+      // 加载插件启用状态
+      await this.loadExtensionStatus();
+      
+      this.isInitializing = false;
+      console.log('AwareMe Background 初始化完成', {
+        configLoaded: !!this.config,
+        isEnabled: this.isEnabled
+      });
+    } catch (error) {
+      console.error('AwareMe Background 初始化失败:', error);
+      this.isInitializing = false;
+      // 即使初始化失败，也要设置默认状态
+      if (!this.config) {
+        this.config = {
+          visitReminders: [],
+          durationLimits: [],
+          weeklyLimits: []
+        };
+      }
+      this.isEnabled = true;
+      console.log('AwareMe Background 使用默认配置完成初始化');
+    }
+  }
+
   async loadConfig() {
     this.config = await AwareMeUtils.loadConfig();
+  }
+
+  async handlePageCheckWithInit(url, tab) {
+    // 等待初始化完成
+    if (this.isInitializing) {
+      try {
+        await this.initializationPromise;
+      } catch (error) {
+        console.error('等待初始化完成时出错:', error);
+      }
+    }
+    
+    // 如果初始化失败或配置未加载，重新尝试加载配置
+    if (!this.config) {
+      console.log('配置未加载，重新尝试加载');
+      try {
+        await this.loadConfig();
+      } catch (error) {
+        console.error('重新加载配置失败:', error);
+      }
+    }
+    
+    // 执行页面检查
+    await this.handlePageCheck(url, tab);
   }
 
   async loadExtensionStatus() {
@@ -286,7 +352,7 @@ class AwareMeBackground {
       console.log(`发送提醒到标签页 ${tab.id}: ${message}`, data);
       
       // 发送消息到内容脚本显示提醒
-      chrome.tabs.sendMessage(tab.id, {
+      this.sendMessageToTab(tab.id, {
         type: 'showReminder',
         message: message,
         reminderType: type,
@@ -304,34 +370,68 @@ class AwareMeBackground {
     }
   }
 
+  /**
+   * 安全地向标签页发送消息，处理连接错误
+   * @param {number} tabId - 标签页ID
+   * @param {Object} message - 要发送的消息
+   */
+  sendMessageToTab(tabId, message) {
+    try {
+      chrome.tabs.sendMessage(tabId, message, (response) => {
+        if (chrome.runtime.lastError) {
+          // 忽略连接错误，这通常发生在content script还未加载完成时
+          console.log(`向标签页 ${tabId} 发送消息失败: ${chrome.runtime.lastError.message}`);
+          // 不抛出错误，避免影响其他功能
+        } else {
+          console.log(`向标签页 ${tabId} 发送消息成功:`, message.type);
+        }
+      });
+    } catch (error) {
+      console.error(`向标签页 ${tabId} 发送消息异常:`, error);
+    }
+  }
+
 
 
   async handlePageCheck(url, tab) {
+    console.log(`处理页面检查: ${url}`);
+    
     // 检查插件是否启用
     if (!this.isEnabled) {
-      // 插件未启用，允许访问
-      chrome.tabs.sendMessage(tab.id, { type: 'pageAllowed' });
+      console.log('插件未启用，允许访问');
+      this.sendMessageToTab(tab.id, { type: 'pageAllowed' });
       return;
     }
 
     const domain = AwareMeUtils.extractDomain(url);
     if (!domain) {
-      // 无法提取域名，允许访问
-      chrome.tabs.sendMessage(tab.id, { type: 'pageAllowed' });
+      console.log('无法提取域名，允许访问');
+      this.sendMessageToTab(tab.id, { type: 'pageAllowed' });
       return;
     }
 
+    // 检查配置是否已加载
+    if (!this.config) {
+      console.log('配置未加载，允许访问');
+      this.sendMessageToTab(tab.id, { type: 'pageAllowed' });
+      return;
+    }
+
+    console.log(`检查域名: ${domain}`);
+    
     // 执行各种检查
     const checkResult = await this.performAccessChecks(domain);
     
     if (checkResult.shouldBlock) {
+      console.log(`域名 ${domain} 被阻止:`, checkResult);
       // 显示相应的提醒
       await this.showReminder(checkResult.message, checkResult.type, checkResult.rule, checkResult.actualValue);
       return;
     }
 
+    console.log(`域名 ${domain} 允许访问`);
     // 没有任何限制或提醒，允许访问
-    chrome.tabs.sendMessage(tab.id, { type: 'pageAllowed' });
+    this.sendMessageToTab(tab.id, { type: 'pageAllowed' });
     
     // 记录访问（在允许访问后）
     await this.recordVisitWithWeeklyTracking(domain);
