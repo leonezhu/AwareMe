@@ -127,11 +127,19 @@ class AwareMeBackground {
     try {
       console.log('AwareMe Background 开始初始化');
       
-      // 加载配置
-      await this.loadConfig();
+      // 并行加载配置和插件状态，提高初始化速度
+      const [configResult, statusResult] = await Promise.allSettled([
+        this.loadConfig(),
+        this.loadExtensionStatus()
+      ]);
       
-      // 加载插件启用状态
-      await this.loadExtensionStatus();
+      if (configResult.status === 'rejected') {
+        console.error('加载配置失败:', configResult.reason);
+      }
+      
+      if (statusResult.status === 'rejected') {
+        console.error('加载插件状态失败:', statusResult.reason);
+      }
       
       this.isInitializing = false;
       console.log('AwareMe Background 初始化完成', {
@@ -139,8 +147,13 @@ class AwareMeBackground {
         isEnabled: this.isEnabled
       });
       
-      // 初始化完成后立即执行一次清理
-      this.cleanupOldRecords();
+      // 预热今日缓存数据
+      this.preloadTodayCache();
+      
+      // 初始化完成后立即执行一次清理（异步执行，不阻塞）
+      this.cleanupOldRecords().catch(error => {
+        console.error('清理旧记录失败:', error);
+      });
     } catch (error) {
       console.error('AwareMe Background 初始化失败:', error);
       this.isInitializing = false;
@@ -165,9 +178,16 @@ class AwareMeBackground {
     // 等待初始化完成
     if (this.isInitializing) {
       try {
-        await this.initializationPromise;
+        // 设置初始化超时，避免无限等待
+        const initTimeout = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('初始化超时')), 10000); // 10秒超时
+        });
+        
+        await Promise.race([this.initializationPromise, initTimeout]);
       } catch (error) {
         console.error('等待初始化完成时出错:', error);
+        // 初始化超时或失败时，强制完成初始化
+        this.isInitializing = false;
       }
     }
     
@@ -178,8 +198,17 @@ class AwareMeBackground {
         await this.loadConfig();
       } catch (error) {
         console.error('重新加载配置失败:', error);
+        // 设置默认配置，确保插件可以正常工作
+        this.config = {
+          visitReminders: [],
+          durationLimits: [],
+          weeklyLimits: []
+        };
       }
     }
+    
+    // 预热缓存：在第一次访问时预先加载今日的访问和时长数据
+    await this.preloadTodayCache();
     
     // 执行页面检查
     await this.handlePageCheck(url, tab);
@@ -612,6 +641,38 @@ class AwareMeBackground {
       
       await chrome.storage.local.set({ [weeklyKey]: weeklyVisits + 1 });
       console.log(`更新周访问跟踪: ${domain}, 周开始: ${weekStart}, 访问天数: ${weeklyVisits + 1}`);
+    }
+  }
+
+  /**
+   * 预热今日缓存数据
+   * 在第一次访问时预先加载今日的访问和时长数据到内存
+   */
+  async preloadTodayCache() {
+    try {
+      const today = new Date().toDateString();
+      const visitKey = `visits_${today}`;
+      const durationKey = `duration_${today}`;
+      
+      // 预先加载今日数据，确保后续读取不会因为缓存未命中而延迟
+      const result = await chrome.storage.local.get([visitKey, durationKey]);
+      
+      // 如果数据不存在，创建空的数据结构
+      const updates = {};
+      if (!result[visitKey]) {
+        updates[visitKey] = {};
+      }
+      if (!result[durationKey]) {
+        updates[durationKey] = {};
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        await chrome.storage.local.set(updates);
+        console.log('预热今日缓存完成:', Object.keys(updates));
+      }
+    } catch (error) {
+      console.error('预热缓存失败:', error);
+      // 预热失败不应该影响正常功能
     }
   }
 

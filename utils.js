@@ -176,12 +176,17 @@ class AwareMeStats {
    * @returns {number} - 访问次数
    */
   static async getTodayVisits(domain) {
-    const today = new Date().toDateString();
-    const visitKey = `visits_${today}`;
-    
-    const result = await chrome.storage.local.get([visitKey]);
-    const visits = result[visitKey] || {};
-    return visits[domain] || 0;
+    try {
+      const today = new Date().toDateString();
+      const visitKey = `visits_${today}`;
+      
+      const result = await chrome.storage.local.get([visitKey]);
+      const visits = result[visitKey] || {};
+      return visits[domain] || 0;
+    } catch (error) {
+      console.error('获取今日访问次数失败:', error);
+      return 0; // 出错时返回默认值
+    }
   }
 
   /**
@@ -190,12 +195,17 @@ class AwareMeStats {
    * @returns {number} - 浏览时长（毫秒）
    */
   static async getTodayDuration(domain) {
-    const today = new Date().toDateString();
-    const durationKey = `duration_${today}`;
-    
-    const result = await chrome.storage.local.get([durationKey]);
-    const durations = result[durationKey] || {};
-    return durations[domain] || 0;
+    try {
+      const today = new Date().toDateString();
+      const durationKey = `duration_${today}`;
+      
+      const result = await chrome.storage.local.get([durationKey]);
+      const durations = result[durationKey] || {};
+      return durations[domain] || 0;
+    } catch (error) {
+      console.error('获取今日浏览时长失败:', error);
+      return 0; // 出错时返回默认值
+    }
   }
 
   /**
@@ -204,20 +214,30 @@ class AwareMeStats {
    * @returns {number} - 访问天数
    */
   static async getWeeklyVisitDays(domain) {
-    const { monday, sunday } = AwareMeUtils.getWeekRange();
-    let visitedDays = 0;
+    try {
+      const { monday, sunday } = AwareMeUtils.getWeekRange();
+      let visitedDays = 0;
 
-    // 从周一到周日遍历每一天
-    for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
-      const dateKey = `visits_${d.toDateString()}`;
-      const result = await chrome.storage.local.get([dateKey]);
-      const visits = result[dateKey] || {};
-      if (visits[domain] && visits[domain] > 0) {
-        visitedDays++;
+      // 从周一到周日遍历每一天
+      for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
+        const dateKey = `visits_${d.toDateString()}`;
+        try {
+          const result = await chrome.storage.local.get([dateKey]);
+          const visits = result[dateKey] || {};
+          if (visits[domain] && visits[domain] > 0) {
+            visitedDays++;
+          }
+        } catch (dayError) {
+          console.warn(`获取${d.toDateString()}访问数据失败:`, dayError);
+          // 单日数据获取失败不影响其他日期的统计
+        }
       }
-    }
 
-    return visitedDays;
+      return visitedDays;
+    } catch (error) {
+      console.error('获取本周访问天数失败:', error);
+      return 0; // 出错时返回默认值
+    }
   }
 
   /**
@@ -226,26 +246,40 @@ class AwareMeStats {
    * @returns {number} - 访问天数
    */
   static async getWeeklyVisitDaysForGroup(domains) {
-    const { monday, sunday } = AwareMeUtils.getWeekRange();
-    let visitedDays = 0;
-
-    // 从周一到周日遍历每一天
-    for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
-      const dateKey = `visits_${d.toDateString()}`;
-      const result = await chrome.storage.local.get([dateKey]);
-      const visits = result[dateKey] || {};
-      
-      // 检查当天是否有访问组内任何域名
-      const hasVisitedAnyDomain = domains.some(domain => {
-        return visits[domain] && visits[domain] > 0;
-      });
-      
-      if (hasVisitedAnyDomain) {
-        visitedDays++;
+    try {
+      if (!domains || domains.length === 0) {
+        return 0;
       }
-    }
+      
+      const { monday, sunday } = AwareMeUtils.getWeekRange();
+      let visitedDays = 0;
 
-    return visitedDays;
+      // 从周一到周日遍历每一天
+      for (let d = new Date(monday); d <= sunday; d.setDate(d.getDate() + 1)) {
+        const dateKey = `visits_${d.toDateString()}`;
+        try {
+          const result = await chrome.storage.local.get([dateKey]);
+          const visits = result[dateKey] || {};
+          
+          // 检查当天是否有访问组内任何域名
+          const hasVisitedAnyDomain = domains.some(domain => {
+            return visits[domain] && visits[domain] > 0;
+          });
+          
+          if (hasVisitedAnyDomain) {
+            visitedDays++;
+          }
+        } catch (dayError) {
+          console.warn(`获取${d.toDateString()}组访问数据失败:`, dayError);
+          // 单日数据获取失败不影响其他日期的统计
+        }
+      }
+
+      return visitedDays;
+    } catch (error) {
+      console.error('获取域名组本周访问天数失败:', error);
+      return 0; // 出错时返回默认值
+    }
   }
 
   /**
@@ -254,18 +288,27 @@ class AwareMeStats {
    * @returns {number} - 总浏览时长（毫秒）
    */
   static async getTodayDurationForGroup(domains) {
-    const today = new Date().toDateString();
-    const durationKey = `duration_${today}`;
-    
-    const result = await chrome.storage.local.get([durationKey]);
-    const durations = result[durationKey] || {};
-    
-    let totalDuration = 0;
-    domains.forEach(domain => {
-      totalDuration += durations[domain] || 0;
-    });
-    
-    return totalDuration;
+    try {
+      if (!domains || domains.length === 0) {
+        return 0;
+      }
+      
+      const today = new Date().toDateString();
+      const durationKey = `duration_${today}`;
+      
+      const result = await chrome.storage.local.get([durationKey]);
+      const durations = result[durationKey] || {};
+      
+      let totalDuration = 0;
+      domains.forEach(domain => {
+        totalDuration += durations[domain] || 0;
+      });
+      
+      return totalDuration;
+    } catch (error) {
+      console.error('获取域名组今日总浏览时长失败:', error);
+      return 0; // 出错时返回默认值
+    }
   }
 
   /**
@@ -273,16 +316,21 @@ class AwareMeStats {
    * @param {string} domain - 域名
    */
   static async recordVisit(domain) {
-    const today = new Date().toDateString();
-    const visitKey = `visits_${today}`;
-    
-    const result = await chrome.storage.local.get([visitKey]);
-    const visits = result[visitKey] || {};
-    visits[domain] = (visits[domain] || 0) + 1;
-    
-    console.log(`记录访问: ${domain}, 日期: ${today}, 次数: ${visits[domain]}`);
-    
-    await chrome.storage.local.set({ [visitKey]: visits });
+    try {
+      const today = new Date().toDateString();
+      const visitKey = `visits_${today}`;
+      
+      const result = await chrome.storage.local.get([visitKey]);
+      const visits = result[visitKey] || {};
+      visits[domain] = (visits[domain] || 0) + 1;
+      
+      console.log(`记录访问: ${domain}, 日期: ${today}, 次数: ${visits[domain]}`);
+      
+      await chrome.storage.local.set({ [visitKey]: visits });
+    } catch (error) {
+      console.error('记录访问失败:', error);
+      // 记录失败不应该影响页面正常访问
+    }
   }
 
   /**

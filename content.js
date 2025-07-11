@@ -207,51 +207,61 @@ class AwareMeContent {
   }
 
   setupOverlayTimeout() {
-    // 设置15秒超时，防止遮罩一直显示，给background script更多初始化时间
+    // 设置6秒超时，防止遮罩一直显示
+    // 减少超时时间，因为现在有了更好的初始化和缓存预热机制
     this.overlayTimeout = setTimeout(() => {
       if (this.loadingOverlay && !this.isPageAllowed) {
         console.warn('AwareMe: 检查超时，自动移除遮罩允许访问');
         this.isPageAllowed = true;
-        this.removeLoadingOverlay();
+        // this.removeLoadingOverlay();
+        //刷新当前网页
+        window.location.reload();
       }
-    }, 15000); // 15秒超时
+    }, 6000); 
   }
 
   async checkCurrentPage() {
     // 发送消息给background检查当前页面
-    const maxRetries = 5; // 增加重试次数
+    const maxRetries = 4; // 减少重试次数，因为现在有更好的初始化机制
     let retryCount = 0;
     
     const attemptCheck = async () => {
       try {
         console.log(`AwareMe: 发送页面检查请求 (第${retryCount + 1}次)`);
         
-        // 使用Promise包装sendMessage以便更好地处理错误
-        const response = await new Promise((resolve, reject) => {
-          chrome.runtime.sendMessage(
-            { type: 'checkCurrentPage', url: window.location.href },
-            (response) => {
-              if (chrome.runtime.lastError) {
-                reject(new Error(chrome.runtime.lastError.message));
-              } else {
-                resolve(response);
+        // 使用Promise包装sendMessage以便更好地处理错误，并添加请求超时
+        const response = await Promise.race([
+          new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage(
+              { type: 'checkCurrentPage', url: window.location.href },
+              (response) => {
+                if (chrome.runtime.lastError) {
+                  reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                  resolve(response);
+                }
               }
-            }
-          );
-        });
+            );
+          }),
+          // 单次请求超时设置为3秒
+          new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('请求超时')), 3000);
+          })
+        ]);
         
         console.log('AwareMe: 页面检查请求发送成功');
       } catch (error) {
         console.error(`AwareMe: 页面检查失败 (第${retryCount + 1}次):`, error);
         
-        // 如果是"Receiving end does not exist"错误，说明background script还未准备好
+        // 如果是"Receiving end does not exist"错误或请求超时，说明background script还未准备好
         if (error.message.includes('Receiving end does not exist') || 
-            error.message.includes('Extension context invalidated')) {
+            error.message.includes('Extension context invalidated') ||
+            error.message.includes('请求超时')) {
           if (retryCount < maxRetries) {
             retryCount++;
-            // 更长的重试间隔：200ms, 500ms, 1s, 2s, 3s
-            const delays = [200, 500, 1000, 2000, 3000];
-            const delay = delays[retryCount - 1] || 3000;
+            // 优化重试间隔：100ms, 300ms, 800ms, 1500ms
+            const delays = [100, 300, 800, 1500];
+            const delay = delays[retryCount - 1] || 1500;
             console.log(`AwareMe: Background script未准备好，${delay}ms后重试`);
             setTimeout(attemptCheck, delay);
           } else {
