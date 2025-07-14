@@ -8,6 +8,7 @@ class AwareMeContent {
     this.isPageAllowed = false;
     this.retryCount = 0;
     this.maxRetries = 3;
+    this.videoMonitorInterval = null; // 视频监控定时器
     this.init();
   }
 
@@ -394,6 +395,11 @@ class AwareMeContent {
     // 保存当前规则信息
     this.currentRule = data.rule || {};
 
+    // 如果是时长限制提醒，暂停所有视频播放
+    if (type === 'duration') {
+      this.pauseAllVideos();
+    }
+
     // 创建提醒模态框
     this.reminderModal = this.createReminderModal(message, type, data);
     document.body.appendChild(this.reminderModal);
@@ -649,6 +655,8 @@ class AwareMeContent {
       if (clickCount >= confirmTimes) {
         // 达到确认次数，关闭模态框
         this.closeModal(modal);
+        // 如果用户坚持访问，可以选择恢复视频播放（可选功能）
+        this.resumePausedVideos();
         return;
       }
       
@@ -757,7 +765,265 @@ class AwareMeContent {
     window.addEventListener('focus', handleFocus, { passive: true });
   }
 
+  pauseAllVideos() {
+    console.log('AwareMe: 暂停所有视频播放');
+    
+    // 查找所有video元素并暂停
+    const videos = document.querySelectorAll('video');
+    videos.forEach(video => {
+      if (!video.paused) {
+        console.log('AwareMe: 暂停视频:', video.src || video.currentSrc || '未知来源');
+        video.pause();
+        // 标记这个视频是被AwareMe暂停的
+        video.setAttribute('data-awareme-paused', 'true');
+      }
+    });
+
+    // 查找iframe中的视频（如嵌入的YouTube、B站等）
+    this.pauseVideosInIframes();
+
+    // 尝试暂停YouTube视频
+    this.pauseYouTubeVideo();
+    
+    // 尝试暂停B站视频
+    this.pauseBilibiliVideo();
+    
+    // 尝试暂停其他常见视频网站
+    this.pauseOtherVideoSites();
+
+    // 启动视频监控，确保在弹窗期间视频保持暂停
+    this.startVideoMonitoring();
+  }
+
+  pauseYouTubeVideo() {
+    // YouTube的暂停按钮
+    const youtubePlayButton = document.querySelector('.ytp-play-button[aria-label*="暂停"], .ytp-play-button[aria-label*="Pause"]');
+    if (youtubePlayButton) {
+      console.log('AwareMe: 点击YouTube暂停按钮');
+      youtubePlayButton.click();
+      return;
+    }
+
+    // 尝试通过YouTube API暂停
+    if (window.ytplayer && window.ytplayer.pauseVideo) {
+      console.log('AwareMe: 通过YouTube API暂停视频');
+      window.ytplayer.pauseVideo();
+      return;
+    }
+
+    // 尝试通过全局YouTube播放器暂停
+    if (window.yt && window.yt.player && window.yt.player.getPlayerByElement) {
+      const playerElement = document.querySelector('#movie_player, .html5-video-player');
+      if (playerElement) {
+        const player = window.yt.player.getPlayerByElement(playerElement);
+        if (player && player.pauseVideo) {
+          console.log('AwareMe: 通过YouTube播放器API暂停视频');
+          player.pauseVideo();
+        }
+      }
+    }
+  }
+
+  pauseBilibiliVideo() {
+    // B站的暂停按钮
+    const bilibiliPlayButton = document.querySelector('.bpx-player-ctrl-play, .bilibili-player-video-btn-start');
+    if (bilibiliPlayButton && bilibiliPlayButton.classList.contains('bpx-state-paused') === false) {
+      console.log('AwareMe: 点击B站暂停按钮');
+      bilibiliPlayButton.click();
+      return;
+    }
+
+    // 尝试通过B站播放器API暂停
+    if (window.player && window.player.pause) {
+      console.log('AwareMe: 通过B站播放器API暂停视频');
+      window.player.pause();
+    }
+  }
+
+  pauseOtherVideoSites() {
+    // 腾讯视频
+    const tencentPlayButton = document.querySelector('.txp-btn-play, .txp-btn-pause');
+    if (tencentPlayButton && !tencentPlayButton.classList.contains('txp-btn-play')) {
+      console.log('AwareMe: 点击腾讯视频暂停按钮');
+      tencentPlayButton.click();
+      return;
+    }
+
+    // 爱奇艺
+    const iqiyiPlayButton = document.querySelector('.iqp-btn-play, .iqp-btn-pause');
+    if (iqiyiPlayButton && iqiyiPlayButton.classList.contains('iqp-btn-pause')) {
+      console.log('AwareMe: 点击爱奇艺暂停按钮');
+      iqiyiPlayButton.click();
+      return;
+    }
+
+    // 优酷
+    const youkuPlayButton = document.querySelector('.control-play-pause');
+    if (youkuPlayButton && youkuPlayButton.getAttribute('data-status') === 'play') {
+      console.log('AwareMe: 点击优酷暂停按钮');
+      youkuPlayButton.click();
+      return;
+    }
+
+    // 抖音
+    const douyinPlayButton = document.querySelector('[data-e2e="video-play-button"]');
+    if (douyinPlayButton) {
+      console.log('AwareMe: 点击抖音暂停按钮');
+      douyinPlayButton.click();
+      return;
+    }
+
+    // 通用的播放/暂停按钮选择器
+    const commonSelectors = [
+      '[aria-label*="暂停"], [aria-label*="Pause"]',
+      '.pause-button, .play-pause-button',
+      '[data-testid="pause-button"]',
+      '.video-controls .pause',
+      '.player-controls .pause',
+      '.vjs-play-control[title*="暂停"], .vjs-play-control[title*="Pause"]',
+      '.plyr__control--overlaid[data-plyr="pause"]',
+      '.dplayer-play-icon'
+    ];
+
+    for (const selector of commonSelectors) {
+      const button = document.querySelector(selector);
+      if (button && button.offsetParent !== null) { // 确保按钮可见
+        console.log('AwareMe: 点击通用暂停按钮:', selector);
+        button.click();
+        break;
+      }
+    }
+
+    // 尝试通过键盘事件暂停（空格键）
+    const videoContainer = document.querySelector('video, .video-player, .player-container');
+    if (videoContainer) {
+      console.log('AwareMe: 尝试通过空格键暂停视频');
+      const spaceKeyEvent = new KeyboardEvent('keydown', {
+        key: ' ',
+        code: 'Space',
+        keyCode: 32,
+        which: 32,
+        bubbles: true,
+        cancelable: true
+      });
+      videoContainer.dispatchEvent(spaceKeyEvent);
+    }
+  }
+
+  resumePausedVideos() {
+    console.log('AwareMe: 恢复被暂停的视频播放');
+    
+    // 恢复所有被AwareMe暂停的video元素
+    const videos = document.querySelectorAll('video[data-awareme-paused="true"]');
+    videos.forEach(video => {
+      console.log('AwareMe: 恢复视频播放:', video.src || video.currentSrc || '未知来源');
+      video.play().catch(error => {
+        console.log('AwareMe: 视频恢复播放失败:', error);
+      });
+      // 移除暂停标记
+      video.removeAttribute('data-awareme-paused');
+    });
+
+    // 注意：对于通过点击按钮暂停的视频（如YouTube、B站等），
+     // 我们不自动恢复播放，因为这可能会干扰用户的正常操作
+     // 用户可以手动点击播放按钮来恢复
+   }
+
+  pauseVideosInIframes() {
+    console.log('AwareMe: 检查iframe中的视频');
+    
+    const iframes = document.querySelectorAll('iframe');
+    iframes.forEach(iframe => {
+      try {
+        // 尝试访问iframe内容（同源策略限制）
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        if (iframeDoc) {
+          const iframeVideos = iframeDoc.querySelectorAll('video');
+          iframeVideos.forEach(video => {
+            if (!video.paused) {
+              console.log('AwareMe: 暂停iframe中的视频:', video.src || video.currentSrc || '未知来源');
+              video.pause();
+              video.setAttribute('data-awareme-paused', 'true');
+            }
+          });
+        }
+      } catch (error) {
+        // 跨域iframe无法访问，这是正常情况
+        console.log('AwareMe: 无法访问iframe内容（跨域限制）:', iframe.src);
+      }
+    });
+  }
+
+  startVideoMonitoring() {
+    // 如果已经在监控，先停止
+    if (this.videoMonitorInterval) {
+      clearInterval(this.videoMonitorInterval);
+    }
+
+    console.log('AwareMe: 启动视频监控');
+    
+    // 每2秒检查一次视频状态
+    this.videoMonitorInterval = setInterval(() => {
+      // 只在有提醒弹窗时进行监控
+      if (!this.reminderModal) {
+        this.stopVideoMonitoring();
+        return;
+      }
+
+      // 检查所有video元素，如果有新的视频开始播放，立即暂停
+      const videos = document.querySelectorAll('video');
+      videos.forEach(video => {
+        if (!video.paused && !video.hasAttribute('data-awareme-paused')) {
+          console.log('AwareMe: 检测到新的视频播放，立即暂停:', video.src || video.currentSrc || '未知来源');
+          video.pause();
+          video.setAttribute('data-awareme-paused', 'true');
+        }
+      });
+
+      // 重新检查各种视频网站的播放状态
+      this.recheckVideoSites();
+    }, 2000);
+  }
+
+  stopVideoMonitoring() {
+    if (this.videoMonitorInterval) {
+      console.log('AwareMe: 停止视频监控');
+      clearInterval(this.videoMonitorInterval);
+      this.videoMonitorInterval = null;
+    }
+  }
+
+  recheckVideoSites() {
+    // 重新检查YouTube
+    const youtubePlayer = document.querySelector('#movie_player video');
+    if (youtubePlayer && !youtubePlayer.paused) {
+      this.pauseYouTubeVideo();
+    }
+
+    // 重新检查B站
+    const bilibiliPlayer = document.querySelector('.bpx-player-video-wrap video, .bilibili-player-video video');
+    if (bilibiliPlayer && !bilibiliPlayer.paused) {
+      this.pauseBilibiliVideo();
+    }
+
+    // 重新检查其他网站
+    const allVideos = document.querySelectorAll('video');
+    let hasPlayingVideo = false;
+    allVideos.forEach(video => {
+      if (!video.paused) {
+        hasPlayingVideo = true;
+      }
+    });
+
+    if (hasPlayingVideo) {
+      this.pauseOtherVideoSites();
+    }
+  }
+
   closeModal(modal) {
+    // 停止视频监控
+    this.stopVideoMonitoring();
+    
     // 添加淡出动画类
     modal.querySelector('.awareme-modal-content').classList.add('awareme-fade-out');
     modal.querySelector('.awareme-modal-overlay').classList.add('awareme-fade-out');
