@@ -141,7 +141,7 @@ class AwareMeContent {
         width: 100%;
         height: 100%;
         background: rgba(255, 255, 255, 0.95);
-        z-index: 999999;
+        z-index: 2147483647;
         display: flex;
         justify-content: center;
         align-items: center;
@@ -395,6 +395,9 @@ class AwareMeContent {
     // 保存当前规则信息
     this.currentRule = data.rule || {};
 
+    // 检测并处理全屏模式
+    this.handleFullscreenMode();
+
     // 如果是时长限制提醒，暂停所有视频播放
     if (type === 'duration') {
       this.pauseAllVideos();
@@ -496,7 +499,7 @@ class AwareMeContent {
         left: 0;
         width: 100%;
         height: 100%;
-        z-index: 999999;
+        z-index: 2147483647;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         overflow: hidden;
         touch-action: none;
@@ -1016,8 +1019,69 @@ class AwareMeContent {
     });
 
     if (hasPlayingVideo) {
-      this.pauseOtherVideoSites();
+       this.pauseOtherVideoSites();
+     }
+   }
+
+  handleFullscreenMode() {
+    console.log('AwareMe: 检测全屏模式');
+    
+    // 检测是否处于全屏模式
+    const isFullscreen = !!(document.fullscreenElement || 
+                           document.webkitFullscreenElement || 
+                           document.mozFullScreenElement || 
+                           document.msFullscreenElement);
+    
+    if (isFullscreen) {
+      console.log('AwareMe: 检测到全屏模式，准备退出全屏以显示弹窗');
+      
+      // 尝试退出全屏模式
+      this.exitFullscreen();
+      
+      // 添加全屏退出监听器，确保弹窗在退出全屏后正确显示
+      this.addFullscreenChangeListener();
     }
+  }
+
+  exitFullscreen() {
+    try {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      } else if (document.mozCancelFullScreen) {
+        document.mozCancelFullScreen();
+      } else if (document.msExitFullscreen) {
+        document.msExitFullscreen();
+      }
+      console.log('AwareMe: 已请求退出全屏模式');
+    } catch (error) {
+      console.error('AwareMe: 退出全屏模式失败:', error);
+    }
+  }
+
+  addFullscreenChangeListener() {
+    const handleFullscreenChange = () => {
+      const isStillFullscreen = !!(document.fullscreenElement || 
+                                  document.webkitFullscreenElement || 
+                                  document.mozFullScreenElement || 
+                                  document.msFullscreenElement);
+      
+      if (!isStillFullscreen) {
+        console.log('AwareMe: 已退出全屏模式，弹窗现在应该可见');
+        // 移除监听器
+        document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+        document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+      }
+    };
+
+    // 添加各种浏览器的全屏变化监听器
+    document.addEventListener('fullscreenchange', handleFullscreenChange, { passive: true });
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange, { passive: true });
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange, { passive: true });
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange, { passive: true });
   }
 
   closeModal(modal) {
