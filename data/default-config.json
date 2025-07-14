@@ -1,7 +1,7 @@
 {
   "visitReminders": [
     {
-      "confirmTimes": 3,
+      "confirmTimes": 1,
       "domains": ["weibo1.com"],
       "status": true,
       "message": "是为了找追热点还是纯粹打发时间？是否可以选择其他更有意义的替代？"
@@ -10,7 +10,7 @@
   "durationLimits": [
     {
       "confirmTimes": 2,
-      "domains": ["bilibili2.com"],
+      "domains": ["bilibili2.com","youtube2.com"],
       "minutes": 1,
       "status": true,
       "message": "你今天在视频网站已停留超过 {{limitTime}} 分钟，是否要切换到其他计划任务？"
@@ -18,8 +18,8 @@
   ],
   "weeklyLimits": [
     {
-      "confirmTimes": 5,
-      "domains": ["github3.com"],
+      "confirmTimes": 1,
+      "domains": ["github3.com","gitlab3.com"],
       "maxVisits": 0,
       "status": true,
       "message": "你本周已有 {{limitNum}} 天访问代码托管网站，是否需要休息或整理已学内容？"

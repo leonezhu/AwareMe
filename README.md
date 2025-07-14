@@ -61,13 +61,6 @@ awareme-extension/
     └── default-config.json # 默认配置
 ```
 
-### 技术特性
-
-- **Manifest V3**: 使用最新的浏览器插件标准
-- **模块化设计**: 清晰的代码结构，易于维护和扩展
-- **本地存储**: 使用 `chrome.storage.local` 安全存储用户数据
-- **响应式设计**: 适配不同屏幕尺寸的设备
-- **无依赖**: 纯原生 JavaScript 实现，无外部依赖
 
 ## TODO
 - [-] 支持不同的浏览器：目前只在 mac版 chrome上测试通过
