@@ -113,7 +113,7 @@ class AwareMeBackground {
     console.log(`[时长统计] 设置定时检查浏览时长`);
     setInterval(() => {
       this.checkDurationLimits();
-    }, 60000); // 每分钟检查一次
+    }, 40000); // 40s检查一次
     
     // 立即执行一次检查以验证功能
     console.log(`[时长统计] 立即执行一次时长检查以验证功能`);
@@ -482,6 +482,7 @@ class AwareMeBackground {
 
   async checkDurationLimits() {
     const timestamp = new Date().toLocaleTimeString();
+      
     console.log(`[时长统计] ${timestamp} 开始检查时长限制`);
     console.log(`[时长统计] 当前状态 - 插件启用: ${this.isEnabled}, 活跃标签页ID: ${this.activeTabId}, 初始化中: ${this.isInitializing}`);
     
@@ -499,6 +500,18 @@ class AwareMeBackground {
     if (this.isInitializing) {
       console.log(`[时长统计] 插件仍在初始化中，跳过检查`);
       return;
+    }
+
+    // 在检查限制前，先更新当前活跃标签页的时间记录
+    // 这确保了时间统计的准确性，避免因为用户长时间停留在同一页面而导致时间不更新
+    if (this.activeTabId && this.startTime && this.currentUrl) {
+      const currentDuration = Date.now() - this.startTime;
+      if (currentDuration >= 1000) { // 只记录超过1秒的时长
+        console.log(`[时长统计] 更新当前页面时长: ${this.currentUrl}, 时长: ${Math.round(currentDuration/1000)}秒`);
+        await this.recordDurationForUrl(this.currentUrl, currentDuration);
+        // 重置开始时间，避免重复计算
+        this.startTime = Date.now();
+      }
     }
 
     try {
@@ -615,13 +628,30 @@ class AwareMeBackground {
    * 安全地向标签页发送消息，处理连接错误
    * @param {number} tabId - 标签页ID
    * @param {Object} message - 要发送的消息
+   * @param {number} retryCount - 重试次数（内部使用）
    */
-  sendMessageToTab(tabId, message) {
+  async sendMessageToTab(tabId, message, retryCount = 0) {
     try {
+      // 首先检查标签页是否仍然存在
+      try {
+        await chrome.tabs.get(tabId);
+      } catch (tabError) {
+        console.log(`标签页 ${tabId} 不存在，跳过消息发送`);
+        return;
+      }
+
       chrome.tabs.sendMessage(tabId, message, (response) => {
         if (chrome.runtime.lastError) {
-          // 忽略连接错误，这通常发生在content script还未加载完成时
-          console.log(`向标签页 ${tabId} 发送消息失败: ${chrome.runtime.lastError.message}`);
+          const errorMsg = chrome.runtime.lastError.message;
+          console.log(`向标签页 ${tabId} 发送消息失败: ${errorMsg}`);
+          
+          // 如果是端口关闭错误且重试次数少于2次，尝试重试
+          if (errorMsg.includes('port closed') && retryCount < 2) {
+            console.log(`准备重试发送消息到标签页 ${tabId}，重试次数: ${retryCount + 1}`);
+            setTimeout(() => {
+              this.sendMessageToTab(tabId, message, retryCount + 1);
+            }, 500); // 延迟500ms后重试
+          }
           // 不抛出错误，避免影响其他功能
         } else {
           console.log(`向标签页 ${tabId} 发送消息成功:`, message.type);
@@ -736,11 +766,26 @@ class AwareMeBackground {
     const durationLimit = durationLimits.find(r => r.domains && r.domains.some(d => domain.includes(d)));
     
     if (durationLimit && durationLimit.status !== false) {
+      // 在检查限制前，先更新当前活跃标签页的时间记录
+      // 确保时间统计的实时性，避免因为用户长时间停留在同一页面而导致时间不更新
+      if (this.activeTabId && this.startTime && this.currentUrl) {
+        const currentDuration = Date.now() - this.startTime;
+        if (currentDuration >= 1000) { // 只记录超过1秒的时长
+          console.log(`[页面检查] 更新当前页面时长: ${this.currentUrl}, 时长: ${Math.round(currentDuration/1000)}秒`);
+          await this.recordDurationForUrl(this.currentUrl, currentDuration);
+          // 重置开始时间，避免重复计算
+          this.startTime = Date.now();
+        }
+      }
+      
       // 计算整个组的今日访问时长
       const todayDuration = await this.getTodayDurationForGroup(durationLimit.domains);
       const limitMs = durationLimit.minutes * 60 * 1000;
       
+      console.log(`[页面检查] 域名 ${domain} 时长检查: 组时长=${Math.round(todayDuration/60000)}分钟, 限制=${durationLimit.minutes}分钟`);
+      
       if (todayDuration >= limitMs) {
+        console.log(`[页面检查] 域名 ${domain} 超出时长限制，阻止访问`);
         return {
           shouldBlock: true,
           message: durationLimit.message,
