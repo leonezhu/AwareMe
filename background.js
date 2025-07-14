@@ -115,6 +115,12 @@ class AwareMeBackground {
       this.checkDurationLimits();
     }, 60000); // 每分钟检查一次
     
+    // 立即执行一次检查以验证功能
+    console.log(`[时长统计] 立即执行一次时长检查以验证功能`);
+    setTimeout(() => {
+      this.checkDurationLimits();
+    }, 5000); // 5秒后执行一次
+    
     // 定时清理旧记录（每小时检查一次）
     console.log(`[时长统计] 设置定时清理旧记录`);
     setInterval(() => {
@@ -249,6 +255,23 @@ class AwareMeBackground {
     } catch (error) {
       console.error('加载插件状态失败:', error);
     }
+  }
+  
+  // 调试函数：检查插件当前状态
+  debugStatus() {
+    console.log('=== AwareMe 插件状态调试信息 ===');
+    console.log('插件启用状态:', this.isEnabled);
+    console.log('初始化状态:', this.isInitializing);
+    console.log('活跃标签页ID:', this.activeTabId);
+    console.log('当前URL:', this.currentUrl);
+    console.log('开始时间:', this.startTime);
+    console.log('配置加载状态:', !!this.config);
+    if (this.config) {
+      console.log('时长限制规则数量:', this.config.durationLimits?.length || 0);
+      console.log('访问提醒规则数量:', this.config.visitReminders?.length || 0);
+      console.log('周限制规则数量:', this.config.weeklyLimits?.length || 0);
+    }
+    console.log('================================');
   }
 
   async toggleExtensionStatus() {
@@ -458,7 +481,9 @@ class AwareMeBackground {
   }
 
   async checkDurationLimits() {
-    console.log(`[时长统计] 开始检查时长限制`);
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[时长统计] ${timestamp} 开始检查时长限制`);
+    console.log(`[时长统计] 当前状态 - 插件启用: ${this.isEnabled}, 活跃标签页ID: ${this.activeTabId}, 初始化中: ${this.isInitializing}`);
     
     // 检查插件是否启用
     if (!this.isEnabled) {
@@ -467,6 +492,12 @@ class AwareMeBackground {
     }
     if (!this.activeTabId) {
       console.log(`[时长统计] 没有活跃标签页，跳过检查`);
+      return;
+    }
+    
+    // 检查是否还在初始化中
+    if (this.isInitializing) {
+      console.log(`[时长统计] 插件仍在初始化中，跳过检查`);
       return;
     }
 
@@ -860,4 +891,26 @@ class AwareMeBackground {
 }
 
 // 初始化后台脚本
-new AwareMeBackground();
+const awareMeBackground = new AwareMeBackground();
+
+// 暴露调试函数到全局作用域，方便在控制台调用
+// 用法：在Chrome扩展的Service Worker控制台中输入 debugAwareMe() 来查看插件状态
+globalThis.debugAwareMe = () => {
+  if (awareMeBackground) {
+    awareMeBackground.debugStatus();
+  } else {
+    console.log('AwareMe 插件实例未找到');
+  }
+};
+
+// 暴露手动触发时长检查的函数
+globalThis.checkDurationLimitsNow = () => {
+  if (awareMeBackground) {
+    console.log('手动触发时长检查...');
+    awareMeBackground.checkDurationLimits();
+  } else {
+    console.log('AwareMe 插件实例未找到');
+  }
+};
+
+console.log('AwareMe 调试函数已加载，可以使用 debugAwareMe() 和 checkDurationLimitsNow() 进行调试');

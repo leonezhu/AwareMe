@@ -151,4 +151,4 @@ class AwareMePopup {
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', () => {
   new AwareMePopup();
-});
+}, { passive: true });

@@ -35,7 +35,7 @@ class AwareMeContent {
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
         this.initAfterDOMLoaded(shouldShowOverlay);
-      });
+      }, { passive: true });
     } else {
       this.initAfterDOMLoaded(shouldShowOverlay);
     }
@@ -53,6 +53,7 @@ class AwareMeContent {
         this.removeLoadingOverlay();
         sendResponse({ success: true });
       }
+      return true; // 保持消息通道开放
     });
     
     // 添加页面卸载保护
@@ -144,6 +145,15 @@ class AwareMeContent {
         justify-content: center;
         align-items: center;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        overflow: hidden;
+        touch-action: none;
+      }
+      
+      body.awareme-no-scroll {
+        overflow: hidden !important;
+        position: fixed !important;
+        width: 100% !important;
+        height: 100% !important;
       }
       
       .awareme-loading-content {
@@ -186,6 +196,18 @@ class AwareMeContent {
     
     // 直接添加到documentElement，因为body可能还不存在
     document.documentElement.appendChild(this.loadingOverlay);
+    
+    // 防止页面滚动
+    if (document.body) {
+      document.body.classList.add('awareme-no-scroll');
+    } else {
+      // 如果body还不存在，等待DOM加载完成后添加
+      document.addEventListener('DOMContentLoaded', () => {
+        if (this.loadingOverlay && document.body) {
+          document.body.classList.add('awareme-no-scroll');
+        }
+      }, { passive: true });
+    }
   }
 
   removeLoadingOverlay() {
@@ -200,6 +222,10 @@ class AwareMeContent {
       if (this.overlayTimeout) {
         clearTimeout(this.overlayTimeout);
         this.overlayTimeout = null;
+      }
+      // 恢复页面滚动
+      if (document.body) {
+        document.body.classList.remove('awareme-no-scroll');
       }
       this.loadingOverlay.remove();
       this.loadingOverlay = null;
@@ -371,6 +397,9 @@ class AwareMeContent {
     // 创建提醒模态框
     this.reminderModal = this.createReminderModal(message, type, data);
     document.body.appendChild(this.reminderModal);
+    
+    // 防止页面滚动
+    document.body.classList.add('awareme-no-scroll');
 
     // 1秒后自动显示关闭按钮和关闭网页按钮
     setTimeout(() => {
@@ -463,6 +492,8 @@ class AwareMeContent {
         height: 100%;
         z-index: 999999;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        overflow: hidden;
+        touch-action: none;
       }
 
       .awareme-modal-overlay {
@@ -475,6 +506,8 @@ class AwareMeContent {
         backdrop-filter: blur(2px);
         z-index: 1;
         transition: opacity 0.2s ease;
+        overflow: hidden;
+        touch-action: none;
       }
 
       .awareme-modal-content {
@@ -633,7 +666,7 @@ class AwareMeContent {
         closeBtn.style.opacity = '1';
         closeBtn.style.cursor = 'pointer';
       }, 500);
-    });
+    }, { passive: true });
 
     // 关闭网页按钮
     closePageBtn.addEventListener('click', () => {
@@ -644,7 +677,7 @@ class AwareMeContent {
         // 使用chrome.tabs API关闭当前标签页
         chrome.runtime.sendMessage({ type: 'closeCurrentTab' });
       // }, 300);
-    });
+    }, { passive: true });
 
     // 设置按钮
     settingsBtn.addEventListener('click', () => {
@@ -652,7 +685,7 @@ class AwareMeContent {
       // 不关闭模态框，保持拦截状态
       // 添加页面可见性监听，当用户从设置页面返回时重新显示模态框
       this.handleSettingsNavigation(modal);
-    });
+    }, { passive: true });
 
     // 点击遮罩层关闭（3秒后才能点击）
     // setTimeout(() => {
@@ -704,7 +737,7 @@ class AwareMeContent {
       }
     };
     
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange, { passive: true });
     
     // 备用方案：监听窗口焦点变化
     const handleFocus = () => {
@@ -721,13 +754,16 @@ class AwareMeContent {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
     
-    window.addEventListener('focus', handleFocus);
+    window.addEventListener('focus', handleFocus, { passive: true });
   }
 
   closeModal(modal) {
     // 添加淡出动画类
     modal.querySelector('.awareme-modal-content').classList.add('awareme-fade-out');
     modal.querySelector('.awareme-modal-overlay').classList.add('awareme-fade-out');
+    
+    // 恢复页面滚动
+    document.body.classList.remove('awareme-no-scroll');
     
     // 200ms 后移除模态框
     setTimeout(() => {
