@@ -690,6 +690,9 @@ class AwareMeBackground {
 
     console.log(`检查域名: ${domain}`);
     
+    // 先记录访问，确保缓存中有数据供检查使用
+    await this.recordVisitWithWeeklyTracking(domain);
+    
     // 执行各种检查
     const checkResult = await this.performAccessChecks(domain);
     
@@ -703,9 +706,6 @@ class AwareMeBackground {
     console.log(`域名 ${domain} 允许访问`);
     // 没有任何限制或提醒，允许访问
     this.sendMessageToTab(tab.id, { type: 'pageAllowed' });
-    
-    // 记录访问（在允许访问后）
-    await this.recordVisitWithWeeklyTracking(domain);
   }
 
   /**
@@ -938,8 +938,10 @@ class AwareMeBackground {
 // 初始化后台脚本
 const awareMeBackground = new AwareMeBackground();
 
+// 初始化插件
+awareMeBackground.init();
+
 // 暴露调试函数到全局作用域，方便在控制台调用
-// 用法：在Chrome扩展的Service Worker控制台中输入 debugAwareMe() 来查看插件状态
 globalThis.debugAwareMe = () => {
   if (awareMeBackground) {
     awareMeBackground.debugStatus();

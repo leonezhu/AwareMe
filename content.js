@@ -4,11 +4,9 @@ class AwareMeContent {
   constructor() {
     this.reminderModal = null;
     this.loadingOverlay = null;
-    this.mutationObserver = null;
     this.isPageAllowed = false;
-    this.retryCount = 0;
-    this.maxRetries = 3;
     this.videoMonitorInterval = null; // 视频监控定时器
+    this.overlayTimeout = null; // 遮罩超时定时器
     this.init();
   }
 
@@ -214,11 +212,6 @@ class AwareMeContent {
   removeLoadingOverlay() {
     if (this.loadingOverlay) {
       console.log('AwareMe: 移除加载遮罩');
-      // 停止监控
-      if (this.mutationObserver) {
-        this.mutationObserver.disconnect();
-        this.mutationObserver = null;
-      }
       // 清除超时定时器
       if (this.overlayTimeout) {
         clearTimeout(this.overlayTimeout);
@@ -234,29 +227,26 @@ class AwareMeContent {
   }
 
   setupOverlayTimeout() {
-    // 设置6秒超时，防止遮罩一直显示
-    // 减少超时时间，因为现在有了更好的初始化和缓存预热机制
+    // 设置8秒超时，防止遮罩一直显示
     this.overlayTimeout = setTimeout(() => {
       if (this.loadingOverlay && !this.isPageAllowed) {
         console.warn('AwareMe: 检查超时，自动移除遮罩允许访问');
         this.isPageAllowed = true;
-        // this.removeLoadingOverlay();
-        //刷新当前网页
-        window.location.reload();
+        this.removeLoadingOverlay();
       }
-    }, 6000); 
+    }, 8000); 
   }
 
   async checkCurrentPage() {
     // 发送消息给background检查当前页面
-    const maxRetries = 4; // 减少重试次数，因为现在有更好的初始化机制
+    const maxRetries = 2; // 减少重试次数
     let retryCount = 0;
     
     const attemptCheck = async () => {
       try {
         console.log(`AwareMe: 发送页面检查请求 (第${retryCount + 1}次)`);
         
-        // 使用Promise包装sendMessage以便更好地处理错误，并添加请求超时
+        // 使用Promise包装sendMessage，设置合理的超时时间
         const response = await Promise.race([
           new Promise((resolve, reject) => {
             chrome.runtime.sendMessage(
@@ -270,9 +260,9 @@ class AwareMeContent {
               }
             );
           }),
-          // 单次请求超时设置为3秒
+          // 单次请求超时设置为5秒
           new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('请求超时')), 3000);
+            setTimeout(() => reject(new Error('请求超时')), 5000);
           })
         ]);
         
@@ -280,25 +270,18 @@ class AwareMeContent {
       } catch (error) {
         console.error(`AwareMe: 页面检查失败 (第${retryCount + 1}次):`, error);
         
-        // 如果是"Receiving end does not exist"错误或请求超时，说明background script还未准备好
-        if (error.message.includes('Receiving end does not exist') || 
+        // 如果是连接错误，尝试重试
+        if ((error.message.includes('Receiving end does not exist') || 
             error.message.includes('Extension context invalidated') ||
-            error.message.includes('请求超时')) {
-          if (retryCount < maxRetries) {
-            retryCount++;
-            // 优化重试间隔：100ms, 300ms, 800ms, 1500ms
-            const delays = [100, 300, 800, 1500];
-            const delay = delays[retryCount - 1] || 1500;
-            console.log(`AwareMe: Background script未准备好，${delay}ms后重试`);
-            setTimeout(attemptCheck, delay);
-          } else {
-            console.warn('AwareMe: Background script长时间未响应，允许访问页面');
-            this.isPageAllowed = true;
-            this.removeLoadingOverlay();
-          }
+            error.message.includes('请求超时')) && retryCount < maxRetries) {
+          retryCount++;
+          // 简化重试间隔：500ms, 1000ms
+          const delay = retryCount === 1 ? 500 : 1000;
+          console.log(`AwareMe: Background script未准备好，${delay}ms后重试`);
+          setTimeout(attemptCheck, delay);
         } else {
-          // 其他类型的错误，直接允许访问
-          console.warn('AwareMe: 检查过程中发生未知错误，允许访问页面');
+          // 重试次数用完或其他错误，直接允许访问
+          console.warn('AwareMe: 检查失败或超时，允许访问页面');
           this.isPageAllowed = true;
           this.removeLoadingOverlay();
         }
@@ -313,45 +296,17 @@ class AwareMeContent {
     
     console.log('AwareMe: 设置遮罩保护机制');
     
-    // 使用MutationObserver监控遮罩是否被移除
-    this.mutationObserver = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.type === 'childList') {
-          // 检查遮罩是否还在DOM中
-          if (this.loadingOverlay && !document.contains(this.loadingOverlay)) {
-            if (!this.isPageAllowed && this.retryCount < this.maxRetries) {
-              console.log(`AwareMe: 检测到遮罩被移除，重新创建 (第${this.retryCount + 1}次)`);
-              this.retryCount++;
-              this.createLoadingOverlay();
-              this.setupOverlayProtection();
-            }
-          }
-        }
-      });
-    });
-    
-    // 监控整个document的变化
-    this.mutationObserver.observe(document, {
-      childList: true,
-      subtree: true
-    });
-    
-    // 定期检查遮罩状态
-    const checkInterval = setInterval(() => {
-      if (this.isPageAllowed) {
-        clearInterval(checkInterval);
-        return;
-      }
-      
-      if (this.loadingOverlay && !document.contains(this.loadingOverlay)) {
-        if (this.retryCount < this.maxRetries) {
-          console.log(`AwareMe: 定期检查发现遮罩丢失，重新创建 (第${this.retryCount + 1}次)`);
-          this.retryCount++;
-          this.createLoadingOverlay();
-          this.setupOverlayProtection();
-        }
-      }
-    }, 1000);
+    // 简化的保护机制：只使用样式保护，不进行复杂的DOM监控
+    // 设置高优先级样式确保遮罩不被轻易移除
+    if (this.loadingOverlay) {
+      this.loadingOverlay.style.cssText += '!important';
+      this.loadingOverlay.style.setProperty('position', 'fixed', 'important');
+      this.loadingOverlay.style.setProperty('top', '0', 'important');
+      this.loadingOverlay.style.setProperty('left', '0', 'important');
+      this.loadingOverlay.style.setProperty('width', '100%', 'important');
+      this.loadingOverlay.style.setProperty('height', '100%', 'important');
+      this.loadingOverlay.style.setProperty('z-index', '2147483647', 'important');
+    }
   }
 
   setupUnloadProtection() {
