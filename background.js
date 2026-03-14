@@ -10,6 +10,11 @@ class AwareMeBackground {
     this.currentUrl = null; // 跟踪当前活跃标签页的URL
     this.config = null;
     this.isEnabled = true; // 默认启用插件
+
+    // 新增：按域名追踪活跃时间，支持多tab并行计时
+    this.domainTimers = new Map(); // Map<domain, { startTime, totalPausedDuration, lastPauseTime }>
+    this.isWindowFocused = true; // 窗口焦点状态
+
     this.init();
   }
 
@@ -137,14 +142,21 @@ class AwareMeBackground {
   // 获取当前活跃标签页
   getCurrentActiveTab() {
     console.log(`[时长统计] 获取当前活跃标签页`);
-    
+
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs && tabs.length > 0) {
         console.log(`[时长统计] 找到活跃标签页: ID=${tabs[0].id}, URL=${tabs[0].url}`);
         this.activeTabId = tabs[0].id;
         this.currentUrl = tabs[0].url;
         this.startTime = Date.now();
-        console.log(`[时长统计] 设置活跃标签页状态完成`);
+
+        // 启动域名计时
+        const domain = AwareMeUtils.extractDomain(tabs[0].url);
+        if (domain && this.isWindowFocused) {
+          this.startDomainTimer(domain);
+        }
+
+        console.log(`[时长统计] 设置活跃标签页状态完成，域名: ${domain}`);
       } else {
         console.log(`[时长统计] 未找到活跃标签页`);
       }
@@ -265,6 +277,13 @@ class AwareMeBackground {
     console.log('活跃标签页ID:', this.activeTabId);
     console.log('当前URL:', this.currentUrl);
     console.log('开始时间:', this.startTime);
+    console.log('窗口焦点状态:', this.isWindowFocused);
+    console.log('域名计时器数量:', this.domainTimers.size);
+    console.log('域名计时器详情:');
+    for (const [domain, timer] of this.domainTimers) {
+      const elapsed = Date.now() - timer.startTime - timer.totalPausedDuration;
+      console.log(`  - ${domain}: 已计时 ${Math.round(elapsed/1000)}秒, 暂停累计: ${Math.round(timer.totalPausedDuration/1000)}秒`);
+    }
     console.log('配置加载状态:', !!this.config);
     if (this.config) {
       console.log('时长限制规则数量:', this.config.durationLimits?.length || 0);
@@ -286,16 +305,27 @@ class AwareMeBackground {
     if (!this.isEnabled) return;
 
     console.log(`[时长统计] 标签页更新: ${tab.id}, 新URL: ${tab.url}, 当前URL: ${this.currentUrl}`);
-    
+
     // 如果是当前活跃标签页且URL发生变化，记录之前页面的浏览时长
     if (this.activeTabId === tab.id && this.startTime && this.currentUrl && this.currentUrl !== tab.url) {
-      const duration = Date.now() - this.startTime;
-      console.log(`[时长统计] URL变化，记录之前页面时长: ${this.currentUrl}, 时长: ${Math.round(duration/1000)}秒`);
-      await this.recordDurationForUrl(this.currentUrl, duration);
-      // 更新当前URL并重新开始计时新页面
+      const oldDomain = AwareMeUtils.extractDomain(this.currentUrl);
+      const newDomain = AwareMeUtils.extractDomain(tab.url);
+
+      // 结束旧域名的计时
+      if (oldDomain) {
+        await this.pauseDomainTimer(oldDomain);
+      }
+
+      // 更新当前URL并开始新域名的计时
       this.currentUrl = tab.url;
       this.startTime = Date.now();
-      console.log(`[时长统计] 开始记录新页面: ${tab.url}`);
+
+      // 开始新域名的计时
+      if (newDomain) {
+        this.startDomainTimer(newDomain);
+      }
+
+      console.log(`[时长统计] URL变化: ${oldDomain} -> ${newDomain}`);
     }
 
     // 页面更新时不再进行检查，因为content script会主动请求检查
@@ -348,21 +378,30 @@ class AwareMeBackground {
 
   async handleTabActivated(tabId) {
     console.log(`[时长统计] 标签页激活: ${tabId}`);
-    
-    // 记录之前标签页的浏览时长
+
+    // 暂停当前活跃域名的计时
     if (this.activeTabId && this.startTime && this.currentUrl) {
-      const duration = Date.now() - this.startTime;
-      console.log(`[时长统计] 切换标签页，记录之前页面时长: ${this.currentUrl}, 时长: ${Math.round(duration/1000)}秒`);
-      await this.recordDurationForUrl(this.currentUrl, duration);
+      const oldDomain = AwareMeUtils.extractDomain(this.currentUrl);
+      if (oldDomain) {
+        await this.pauseDomainTimer(oldDomain);
+      }
     }
 
     // 开始记录新标签页
     try {
       const tab = await chrome.tabs.get(tabId);
+      const newDomain = AwareMeUtils.extractDomain(tab.url);
+
       this.activeTabId = tabId;
       this.currentUrl = tab.url;
       this.startTime = Date.now();
-      console.log(`[时长统计] 开始记录新标签页: ${tab.url}`);
+
+      // 开始新域名的计时
+      if (newDomain && this.isWindowFocused) {
+        this.startDomainTimer(newDomain);
+      }
+
+      console.log(`[时长统计] 开始记录新标签页: ${tab.url}, 域名: ${newDomain}`);
     } catch (error) {
       console.error('获取标签页信息失败:', error);
     }
@@ -370,13 +409,17 @@ class AwareMeBackground {
 
   async handleTabRemoved(tabId) {
     console.log(`[时长统计] 标签页关闭: ${tabId}`);
-    
+
     // 如果关闭的是当前活跃标签页，记录时长
     if (this.activeTabId === tabId && this.startTime && this.currentUrl) {
-      const duration = Date.now() - this.startTime;
-      console.log(`[时长统计] 关闭活跃标签页，记录时长: ${this.currentUrl}, 时长: ${Math.round(duration/1000)}秒`);
-      await this.recordDurationForUrl(this.currentUrl, duration);
-      
+      const domain = AwareMeUtils.extractDomain(this.currentUrl);
+      if (domain) {
+        await this.pauseDomainTimer(domain);
+        // 提交最终时长并清理计时器
+        await this.commitDomainTime(domain);
+        this.domainTimers.delete(domain);
+      }
+
       console.log(`[时长统计] 清除活跃标签页状态`);
       this.activeTabId = null;
       this.currentUrl = null;
@@ -386,32 +429,167 @@ class AwareMeBackground {
 
   handleWindowBlur() {
     console.log(`[时长统计] 窗口失去焦点`);
-    
-    // 窗口失去焦点，暂停计时
-    if (this.activeTabId && this.startTime && this.currentUrl) {
-      const duration = Date.now() - this.startTime;
-      console.log(`[时长统计] 窗口失焦，记录时长: ${this.currentUrl}, 时长: ${Math.round(duration/1000)}秒`);
-      this.recordDurationForUrl(this.currentUrl, duration);
-      
-      console.log(`[时长统计] 清除窗口状态`);
-      this.activeTabId = null;
-      this.currentUrl = null;
-      this.startTime = null;
+
+    // 窗口失去焦点，暂停当前域名的计时（不清除状态）
+    if (this.activeTabId && this.currentUrl) {
+      const domain = AwareMeUtils.extractDomain(this.currentUrl);
+      if (domain) {
+        this.pauseDomainTimer(domain);
+        console.log(`[时长统计] 窗口失焦，暂停域名计时: ${domain}`);
+      }
     }
+
+    this.isWindowFocused = false;
   }
 
   handleWindowFocus() {
     console.log(`[时长统计] 窗口获得焦点`);
-    
-    // 窗口获得焦点，重新开始计时
+
+    this.isWindowFocused = true;
+
+    // 窗口获得焦点，恢复当前域名的计时
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs && tabs.length > 0) {
+        const domain = AwareMeUtils.extractDomain(tabs[0].url);
+
+        // 先记录之前的状态（如果有）
+        if (this.activeTabId && this.currentUrl && this.activeTabId !== tabs[0].id) {
+          const oldDomain = AwareMeUtils.extractDomain(this.currentUrl);
+          if (oldDomain) {
+            this.pauseDomainTimer(oldDomain);
+          }
+        }
+
         this.activeTabId = tabs[0].id;
         this.currentUrl = tabs[0].url;
         this.startTime = Date.now();
-        console.log(`[时长统计] 窗口获焦，开始记录: ${tabs[0].url}`);
+
+        // 恢复或开始域名计时
+        if (domain) {
+          this.resumeDomainTimer(domain);
+          console.log(`[时长统计] 窗口获焦，恢复域名计时: ${domain}`);
+        }
       }
     });
+  }
+
+  /**
+   * 开始域名计时
+   * @param {string} domain - 域名
+   */
+  startDomainTimer(domain) {
+    if (!domain) return;
+
+    const now = Date.now();
+    const existingTimer = this.domainTimers.get(domain);
+
+    if (existingTimer) {
+      // 如果已存在计时器，恢复计时（清除暂停状态）
+      if (existingTimer.lastPauseTime) {
+        const pausedDuration = now - existingTimer.lastPauseTime;
+        existingTimer.totalPausedDuration += pausedDuration;
+        existingTimer.lastPauseTime = null;
+        console.log(`[时长统计] 恢复域名计时: ${domain}, 本次暂停: ${Math.round(pausedDuration/1000)}秒`);
+      }
+      // 重置开始时间
+      existingTimer.startTime = now;
+    } else {
+      // 创建新计时器
+      this.domainTimers.set(domain, {
+        startTime: now,
+        totalPausedDuration: 0,
+        lastPauseTime: null
+      });
+      console.log(`[时长统计] 开始域名计时: ${domain}`);
+    }
+  }
+
+  /**
+   * 暂停域名计时（异步版本，会提交时长到存储）
+   * @param {string} domain - 域名
+   */
+  async pauseDomainTimer(domain) {
+    if (!domain) return;
+
+    const timer = this.domainTimers.get(domain);
+    if (!timer) return;
+
+    const now = Date.now();
+
+    // 计算并记录时长
+    const elapsed = now - timer.startTime - timer.totalPausedDuration;
+    if (elapsed >= 1000) {
+      await this.recordDurationForDomain(domain, elapsed);
+      console.log(`[时长统计] 暂停域名计时: ${domain}, 记录时长: ${Math.round(elapsed/1000)}秒`);
+    }
+
+    // 记录暂停时间
+    timer.lastPauseTime = now;
+    // 重置开始时间和暂停累计
+    timer.startTime = now;
+    timer.totalPausedDuration = 0;
+  }
+
+  /**
+   * 恢复域名计时
+   * @param {string} domain - 域名
+   */
+  resumeDomainTimer(domain) {
+    this.startDomainTimer(domain);
+  }
+
+  /**
+   * 提交域名时长到存储（不清理计时器）
+   * @param {string} domain - 域名
+   */
+  async commitDomainTime(domain) {
+    if (!domain) return;
+
+    const timer = this.domainTimers.get(domain);
+    if (!timer) return;
+
+    const now = Date.now();
+    const elapsed = now - timer.startTime - timer.totalPausedDuration;
+
+    if (elapsed >= 1000) {
+      await this.recordDurationForDomain(domain, elapsed);
+      console.log(`[时长统计] 提交域名时长: ${domain}, 时长: ${Math.round(elapsed/1000)}秒`);
+    }
+  }
+
+  /**
+   * 记录域名时长到存储
+   * @param {string} domain - 域名
+   * @param {number} duration - 时长（毫秒）
+   */
+  async recordDurationForDomain(domain, duration) {
+    console.log(`[时长统计] recordDurationForDomain: ${domain}, 时长=${Math.round(duration/1000)}秒`);
+
+    try {
+      // 忽略过短的时长记录（小于1秒）
+      if (duration < 1000) {
+        console.log(`[时长统计] 忽略短时长: ${Math.round(duration/1000)}秒`);
+        return;
+      }
+
+      const today = new Date().toDateString();
+      const durationKey = `duration_${today}`;
+      console.log(`[时长统计] 存储键: ${durationKey}`);
+
+      const result = await chrome.storage.local.get([durationKey]);
+      const durations = result[durationKey] || {};
+      const previousDuration = durations[domain] || 0;
+      console.log(`[时长统计] ${domain} 当前累计时长: ${Math.round(previousDuration/1000)}秒`);
+
+      durations[domain] = previousDuration + duration;
+      console.log(`[时长统计] ${domain} 更新后时长: ${Math.round(durations[domain]/1000)}秒`);
+
+      await chrome.storage.local.set({ [durationKey]: durations });
+
+      console.log(`[时长统计] 存储完成: ${domain}, 本次: ${Math.round(duration/1000)}秒, 今日总计: ${Math.round(durations[domain]/1000)}秒`);
+    } catch (error) {
+      console.error('[时长统计] 记录浏览时长失败:', error);
+    }
   }
 
   async recordDuration(tabId, duration) {
@@ -482,10 +660,10 @@ class AwareMeBackground {
 
   async checkDurationLimits() {
     const timestamp = new Date().toLocaleTimeString();
-      
+
     console.log(`[时长统计] ${timestamp} 开始检查时长限制`);
     console.log(`[时长统计] 当前状态 - 插件启用: ${this.isEnabled}, 活跃标签页ID: ${this.activeTabId}, 初始化中: ${this.isInitializing}`);
-    
+
     // 检查插件是否启用
     if (!this.isEnabled) {
       console.log(`[时长统计] 插件未启用，跳过检查`);
@@ -495,22 +673,24 @@ class AwareMeBackground {
       console.log(`[时长统计] 没有活跃标签页，跳过检查`);
       return;
     }
-    
+
     // 检查是否还在初始化中
     if (this.isInitializing) {
       console.log(`[时长统计] 插件仍在初始化中，跳过检查`);
       return;
     }
 
-    // 在检查限制前，先更新当前活跃标签页的时间记录
-    // 这确保了时间统计的准确性，避免因为用户长时间停留在同一页面而导致时间不更新
-    if (this.activeTabId && this.startTime && this.currentUrl) {
-      const currentDuration = Date.now() - this.startTime;
-      if (currentDuration >= 1000) { // 只记录超过1秒的时长
-        console.log(`[时长统计] 更新当前页面时长: ${this.currentUrl}, 时长: ${Math.round(currentDuration/1000)}秒`);
-        await this.recordDurationForUrl(this.currentUrl, currentDuration);
-        // 重置开始时间，避免重复计算
-        this.startTime = Date.now();
+    // 使用新的域名计时器机制提交当前时长
+    if (this.currentUrl && this.isWindowFocused) {
+      const domain = AwareMeUtils.extractDomain(this.currentUrl);
+      if (domain) {
+        await this.commitDomainTime(domain);
+        // 重置计时器，避免重复计算
+        const timer = this.domainTimers.get(domain);
+        if (timer) {
+          timer.startTime = Date.now();
+          timer.totalPausedDuration = 0;
+        }
       }
     }
 
@@ -521,31 +701,31 @@ class AwareMeBackground {
         console.log(`[时长统计] 无法提取域名: ${tab.url}`);
         return;
       }
-      
+
       console.log(`[时长统计] 当前域名: ${domain}`);
 
       const limits = this.config?.durationLimits || [];
       console.log(`[时长统计] 配置的时长限制数量: ${limits.length}`);
-      
+
       const limit = limits.find(l => {
         const isEnabled = l.status !== false;
         const hasDomains = l.domains && l.domains.length > 0;
         const domainMatches = hasDomains && l.domains.some(d => domain.includes(d));
-        
+
         console.log(`[时长统计] 检查限制规则: 启用=${isEnabled}, 有域名=${hasDomains}, 域名匹配=${domainMatches}, 规则域名=[${l.domains?.join(', ')}]`);
-        
+
         return isEnabled && hasDomains && domainMatches;
       });
-      
+
       if (limit) {
         console.log(`[时长统计] 找到匹配的限制规则: ${limit.minutes}分钟, 域名=[${limit.domains.join(', ')}]`);
-        
+
         // 计算整个组的今日访问时长
         const todayDuration = await this.getTodayDurationForGroup(limit.domains);
         const limitMs = limit.minutes * 60 * 1000;
-        
+
         console.log(`[时长统计] 今日时长: ${Math.round(todayDuration/60000)}分钟, 限制: ${limit.minutes}分钟`);
-        
+
         if (todayDuration >= limitMs) {
           console.log(`[时长统计] 超出时长限制，显示提醒`);
           await this.showReminder(limit.message, 'duration', limit, todayDuration);
@@ -764,26 +944,28 @@ class AwareMeBackground {
   async checkDurationLimitRule(domain) {
     const durationLimits = this.config?.durationLimits || [];
     const durationLimit = durationLimits.find(r => r.domains && r.domains.some(d => domain.includes(d)));
-    
+
     if (durationLimit && durationLimit.status !== false) {
-      // 在检查限制前，先更新当前活跃标签页的时间记录
-      // 确保时间统计的实时性，避免因为用户长时间停留在同一页面而导致时间不更新
-      if (this.activeTabId && this.startTime && this.currentUrl) {
-        const currentDuration = Date.now() - this.startTime;
-        if (currentDuration >= 1000) { // 只记录超过1秒的时长
-          console.log(`[页面检查] 更新当前页面时长: ${this.currentUrl}, 时长: ${Math.round(currentDuration/1000)}秒`);
-          await this.recordDurationForUrl(this.currentUrl, currentDuration);
-          // 重置开始时间，避免重复计算
-          this.startTime = Date.now();
+      // 使用新的计时器机制提交当前时长
+      if (this.currentUrl && this.isWindowFocused) {
+        const currentDomain = AwareMeUtils.extractDomain(this.currentUrl);
+        if (currentDomain) {
+          await this.commitDomainTime(currentDomain);
+          // 重置计时器
+          const timer = this.domainTimers.get(currentDomain);
+          if (timer) {
+            timer.startTime = Date.now();
+            timer.totalPausedDuration = 0;
+          }
         }
       }
-      
+
       // 计算整个组的今日访问时长
       const todayDuration = await this.getTodayDurationForGroup(durationLimit.domains);
       const limitMs = durationLimit.minutes * 60 * 1000;
-      
+
       console.log(`[页面检查] 域名 ${domain} 时长检查: 组时长=${Math.round(todayDuration/60000)}分钟, 限制=${durationLimit.minutes}分钟`);
-      
+
       if (todayDuration >= limitMs) {
         console.log(`[页面检查] 域名 ${domain} 超出时长限制，阻止访问`);
         return {
