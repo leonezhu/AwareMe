@@ -138,7 +138,7 @@ class AwareMeContent {
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(255, 255, 255, 0.95);
+        background: rgba(250, 250, 250, 0.98);
         z-index: 2147483647;
         display: flex;
         justify-content: center;
@@ -147,39 +147,39 @@ class AwareMeContent {
         overflow: hidden;
         touch-action: none;
       }
-      
+
       body.awareme-no-scroll {
         overflow: hidden !important;
         position: fixed !important;
         width: 100% !important;
         height: 100% !important;
       }
-      
+
       .awareme-loading-content {
         text-align: center;
         padding: 40px;
         background: white;
-        border-radius: 12px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        border: 1px solid rgba(0, 0, 0, 0.1);
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        border: 1px solid #d3d3d3;
       }
-      
+
       .awareme-loading-spinner {
         width: 40px;
         height: 40px;
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #007AFF;
+        border: 4px solid #d3d3d3;
+        border-top: 4px solid #36454f;
         border-radius: 50%;
         animation: awareme-spin 1s linear infinite;
         margin: 0 auto 20px;
       }
-      
+
       .awareme-loading-text {
-        color: #333;
+        color: #36454f;
         font-size: 16px;
         font-weight: 500;
       }
-      
+
       @keyframes awareme-spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
@@ -466,7 +466,7 @@ class AwareMeContent {
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.95);
+        background: rgba(54, 69, 79, 0.9);
         backdrop-filter: blur(2px);
         z-index: 1;
         transition: opacity 0.2s ease;
@@ -480,8 +480,8 @@ class AwareMeContent {
         left: 50%;
         transform: translate(-50%, -50%);
         background: white;
-        border-radius: 12px;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
         max-width: 400px;
         width: 90%;
         animation: awaremeSlideIn 0.3s ease-out;
@@ -522,7 +522,7 @@ class AwareMeContent {
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #f0f9ff;
+        background: #f5f5f5;
         border-radius: 50%;
       }
 
@@ -530,7 +530,7 @@ class AwareMeContent {
         margin: 0;
         font-size: 18px;
         font-weight: 600;
-        color: #1f2937;
+        color: #36454f;
       }
 
       .awareme-modal-body {
@@ -541,7 +541,7 @@ class AwareMeContent {
         margin: 0;
         font-size: 14px;
         line-height: 1.5;
-        color: #4b5563;
+        color: #708090;
       }
 
       .awareme-modal-footer {
@@ -564,30 +564,30 @@ class AwareMeContent {
       }
 
       .awareme-close-btn {
-        background: #3b82f6;
+        background: #36454f;
         color: white;
       }
 
       .awareme-close-btn:hover {
-        background: #2563eb;
+        background: #2a363f;
       }
 
       .awareme-close-page-btn {
-        background: #ef4444;
+        background: #c1666b;
         color: white;
       }
 
       .awareme-close-page-btn:hover {
-        background: #dc2626;
+        background: #a85555;
       }
 
       .awareme-settings-btn {
-        background: #f3f4f6;
-        color: #374151;
+        background: #e8e8e8;
+        color: #36454f;
       }
 
       .awareme-settings-btn:hover {
-        background: #e5e7eb;
+        background: #d3d3d3;
       }
     `;
     modal.appendChild(style);

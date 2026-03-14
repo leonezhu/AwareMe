@@ -117,7 +117,7 @@ class AwareMeOptions {
       const isEnabled = rule.status !== false; // 默认启用
       row.innerHTML = `
        <td>
-          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="域名列表（用逗号分隔）">${(rule.domains || []).join(', ')}</textarea>
+          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名">${(rule.domains || []).join('\n')}</textarea>
         </td>
         <td>
           <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
@@ -162,7 +162,7 @@ class AwareMeOptions {
       const isEnabled = rule.status !== false; // 默认启用
       row.innerHTML = `
         <td>
-          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="域名列表（用逗号分隔）">${(rule.domains || []).join(', ')}</textarea>
+          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名">${(rule.domains || []).join('\n')}</textarea>
         </td>
         <td>
           <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
@@ -203,7 +203,7 @@ class AwareMeOptions {
       const isEnabled = rule.status !== false; // 默认启用
       row.innerHTML = `
         <td>
-          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="域名列表（用逗号分隔）">${(rule.domains || []).join(', ')}</textarea>
+          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名">${(rule.domains || []).join('\n')}</textarea>
         </td>
         <td>
           <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
@@ -329,8 +329,8 @@ class AwareMeOptions {
       const field = input.dataset.field;
       if (this.config.visitReminders[index]) {
         if (field === 'domains') {
-          // 处理域名列表，将逗号分隔的字符串转换为数组
-          this.config.visitReminders[index][field] = input.value.split(',').map(d => d.trim()).filter(d => d);
+          // 处理域名列表，将换行分隔的字符串转换为数组
+          this.config.visitReminders[index][field] = input.value.split(/[\n,]/).map(d => d.trim()).filter(d => d);
         } else {
           this.config.visitReminders[index][field] = input.value;
         }
@@ -344,8 +344,8 @@ class AwareMeOptions {
       const field = input.dataset.field;
       if (this.config.durationLimits[index]) {
         if (field === 'domains') {
-          // 处理域名列表，将逗号分隔的字符串转换为数组
-          this.config.durationLimits[index][field] = input.value.split(',').map(d => d.trim()).filter(d => d);
+          // 处理域名列表，将换行分隔的字符串转换为数组
+          this.config.durationLimits[index][field] = input.value.split(/[\n,]/).map(d => d.trim()).filter(d => d);
         } else if (field === 'minutes') {
           this.config.durationLimits[index][field] = parseInt(input.value) || 1;
         } else {
@@ -361,8 +361,8 @@ class AwareMeOptions {
       const field = input.dataset.field;
       if (this.config.weeklyLimits[index]) {
         if (field === 'domains') {
-          // 处理域名列表，将逗号分隔的字符串转换为数组
-          this.config.weeklyLimits[index][field] = input.value.split(',').map(d => d.trim()).filter(d => d);
+          // 处理域名列表，将换行分隔的字符串转换为数组
+          this.config.weeklyLimits[index][field] = input.value.split(/[\n,]/).map(d => d.trim()).filter(d => d);
         } else if (field === 'maxVisits') {
           this.config.weeklyLimits[index][field] = parseInt(input.value) || 0;
         } else {
@@ -492,7 +492,7 @@ class AwareMeOptions {
   
 
   async clearAllData() {
-    if (confirm('确定要清除所有统计数据吗？此操作不可恢复，但不会影响您的配置。')) {
+    if (confirm('确定要清除所有统计数据吗？此操作不可恢复，但不会影响您的配置')) {
       try {
         // 获取所有存储的键
         const allData = await chrome.storage.local.get(null);
