@@ -82,8 +82,37 @@ class AwareMeUtils {
       });
     }
 
-    // 检查当前域名是否匹配任何配置的域名
+    // 检查当前域名是否匹配任何配置的域名（支持关键词模糊匹配）
     return allConfiguredDomains.some(configDomain => domain.includes(configDomain));
+  }
+
+  /**
+   * 在存储数据中模糊匹配关键词，返回匹配值的总和
+   * 用于支持关键词模糊匹配（如配置 "xman" 汇总 "xman44.com" 的数据）
+   * @param {Object} data - 存储数据对象 {actualDomain: value}
+   * @param {string} pattern - 配置的关键词或域名
+   * @returns {number} - 匹配的值总和
+   */
+  static fuzzySumByPattern(data, pattern) {
+    if (!data || !pattern) return 0;
+    let total = 0;
+    for (const [key, value] of Object.entries(data)) {
+      if (key.includes(pattern)) {
+        total += value || 0;
+      }
+    }
+    return total;
+  }
+
+  /**
+   * 在存储数据中检查是否有任何域名匹配关键词且有数据
+   * @param {Object} data - 存储数据对象 {actualDomain: value}
+   * @param {string} pattern - 配置的关键词或域名
+   * @returns {boolean}
+   */
+  static fuzzyAnyByPattern(data, pattern) {
+    if (!data || !pattern) return false;
+    return Object.keys(data).some(key => key.includes(pattern) && data[key] > 0);
   }
 
   /**
@@ -261,9 +290,9 @@ class AwareMeStats {
           const result = await chrome.storage.local.get([dateKey]);
           const visits = result[dateKey] || {};
           
-          // 检查当天是否有访问组内任何域名
-          const hasVisitedAnyDomain = domains.some(domain => {
-            return visits[domain] && visits[domain] > 0;
+          // 检查当天是否有访问组内任何域名（支持关键词模糊匹配）
+          const hasVisitedAnyDomain = domains.some(pattern => {
+            return AwareMeUtils.fuzzyAnyByPattern(visits, pattern);
           });
           
           if (hasVisitedAnyDomain) {
@@ -300,8 +329,8 @@ class AwareMeStats {
       const durations = result[durationKey] || {};
       
       let totalDuration = 0;
-      domains.forEach(domain => {
-        totalDuration += durations[domain] || 0;
+      domains.forEach(pattern => {
+        totalDuration += AwareMeUtils.fuzzySumByPattern(durations, pattern);
       });
       
       return totalDuration;

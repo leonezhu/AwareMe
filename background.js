@@ -366,9 +366,9 @@ class AwareMeBackground {
     console.log(`[时长统计] 当前存储的时长数据:`, durations);
     
     let totalDuration = 0;
-    for (const domain of domains) {
-      const domainDuration = durations[domain] || 0;
-      console.log(`[时长统计] 域名 ${domain} 时长: ${Math.round(domainDuration/1000)}秒`);
+    for (const pattern of domains) {
+      const domainDuration = AwareMeUtils.fuzzySumByPattern(durations, pattern);
+      console.log(`[时长统计] 关键词 ${pattern} 匹配时长: ${Math.round(domainDuration/1000)}秒`);
       totalDuration += domainDuration;
     }
     
@@ -1024,7 +1024,7 @@ class AwareMeBackground {
     const result = await chrome.storage.local.get([visitKey]);
     const visits = result[visitKey] || {};
     
-    return domains.some(domain => visits[domain] && visits[domain] > 0);
+    return domains.some(pattern => AwareMeUtils.fuzzyAnyByPattern(visits, pattern));
   }
 
   /**

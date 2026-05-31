@@ -28,6 +28,16 @@ class AwareMeOptions {
 
   async saveConfig() {
     try {
+      // 强制严格模式规则的 status 和 strict 不可更改
+      for (const rule of this.config.visitReminders) {
+        if (rule.strict) { rule.status = true; rule.strict = true; }
+      }
+      for (const rule of this.config.durationLimits) {
+        if (rule.strict) { rule.status = true; rule.strict = true; }
+      }
+      for (const rule of this.config.weeklyLimits) {
+        if (rule.strict) { rule.status = true; rule.strict = true; }
+      }
       await chrome.storage.local.set({ userConfig: this.config });
       this.showMessage('配置保存成功', 'success');
     } catch (error) {
@@ -115,9 +125,23 @@ class AwareMeOptions {
     this.config.visitReminders.forEach((rule, index) => {
       const row = document.createElement('tr');
       const isEnabled = rule.status !== false; // 默认启用
+      const isStrict = rule.strict === true;
+
+      // 严格模式下：checkbox 不可取消，隐藏关闭和删除按钮
+      const strictCheckbox = isStrict
+        ? `<input type="checkbox" checked disabled title="严格模式已锁定">`
+        : `<input type="checkbox" ${isStrict ? 'checked' : ''} data-field="strict" data-index="${index}" title="启用严格模式后不可关闭和删除">`;
+
+      const actionButtons = isStrict
+        ? `<span class="locked-badge">🔒 已锁定</span>`
+        : `<button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-visit-status" data-index="${index}">
+            ${isEnabled ? '关闭' : '启用'}
+          </button>
+          <button class="btn btn-danger btn-small delete-visit-rule" data-index="${index}">删除</button>`;
+
       row.innerHTML = `
        <td>
-          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名">${(rule.domains || []).join('\n')}</textarea>
+          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名或关键词">${(rule.domains || []).join('\n')}</textarea>
         </td>
         <td>
           <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
@@ -125,24 +149,35 @@ class AwareMeOptions {
         <td>
           <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
         </td>
+        <td class="strict-cell">
+          ${strictCheckbox}
+        </td>
         <td>
-          <button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-visit-status" data-index="${index}">
-            ${isEnabled ? '关闭' : '启用'}
-          </button>
-          <button class="btn btn-danger btn-small delete-visit-rule" data-index="${index}">删除</button>
+          ${actionButtons}
         </td>
       `;
       tbody.appendChild(row);
 
-      // 绑定状态切换事件
-      row.querySelector('.toggle-visit-status').addEventListener('click', () => {
-        this.toggleVisitRuleStatus(index);
-      });
+      if (!isStrict) {
+        // 绑定状态切换事件
+        row.querySelector('.toggle-visit-status').addEventListener('click', () => {
+          this.toggleVisitRuleStatus(index);
+        });
 
-      // 绑定删除规则事件
-      row.querySelector('.delete-visit-rule').addEventListener('click', () => {
-        this.removeVisitRule(index);
-      });
+        // 绑定删除规则事件
+        row.querySelector('.delete-visit-rule').addEventListener('click', () => {
+          this.removeVisitRule(index);
+        });
+      }
+
+      // 绑定严格模式 checkbox 事件（仅非严格模式下可点击）
+      const strictCheckboxEl = row.querySelector('.strict-cell input[type="checkbox"]:not([disabled])');
+      if (strictCheckboxEl) {
+        strictCheckboxEl.addEventListener('change', () => {
+          this.config.visitReminders[index].strict = strictCheckboxEl.checked;
+          this.renderVisitTable();
+        });
+      }
     });
   }
 
@@ -160,9 +195,22 @@ class AwareMeOptions {
     this.config.durationLimits.forEach((rule, index) => {
       const row = document.createElement('tr');
       const isEnabled = rule.status !== false; // 默认启用
+      const isStrict = rule.strict === true;
+
+      const strictCheckbox = isStrict
+        ? `<input type="checkbox" checked disabled title="严格模式已锁定">`
+        : `<input type="checkbox" ${isStrict ? 'checked' : ''} data-field="strict" data-index="${index}" title="启用严格模式后不可关闭和删除">`;
+
+      const actionButtons = isStrict
+        ? `<span class="locked-badge">🔒 已锁定</span>`
+        : `<button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-duration-status" data-index="${index}">
+            ${isEnabled ? '关闭' : '启用'}
+          </button>
+          <button class="btn btn-danger btn-small delete-duration-rule" data-index="${index}">删除</button>`;
+
       row.innerHTML = `
         <td>
-          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名">${(rule.domains || []).join('\n')}</textarea>
+          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名或关键词">${(rule.domains || []).join('\n')}</textarea>
         </td>
         <td>
           <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
@@ -173,24 +221,35 @@ class AwareMeOptions {
         <td>
           <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
         </td>
+        <td class="strict-cell">
+          ${strictCheckbox}
+        </td>
         <td>
-          <button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-duration-status" data-index="${index}">
-            ${isEnabled ? '关闭' : '启用'}
-          </button>
-          <button class="btn btn-danger btn-small delete-duration-rule" data-index="${index}">删除</button>
+          ${actionButtons}
         </td>
       `;
       tbody.appendChild(row);
 
-      // 绑定状态切换事件
-      row.querySelector('.toggle-duration-status').addEventListener('click', () => {
-        this.toggleDurationRuleStatus(index);
-      });
+      if (!isStrict) {
+        // 绑定状态切换事件
+        row.querySelector('.toggle-duration-status').addEventListener('click', () => {
+          this.toggleDurationRuleStatus(index);
+        });
 
-      // 绑定删除规则事件
-      row.querySelector('.delete-duration-rule').addEventListener('click', () => {
-        this.removeDurationRule(index);
-      });
+        // 绑定删除规则事件
+        row.querySelector('.delete-duration-rule').addEventListener('click', () => {
+          this.removeDurationRule(index);
+        });
+      }
+
+      // 绑定严格模式 checkbox 事件
+      const strictCheckboxEl = row.querySelector('.strict-cell input[type="checkbox"]:not([disabled])');
+      if (strictCheckboxEl) {
+        strictCheckboxEl.addEventListener('change', () => {
+          this.config.durationLimits[index].strict = strictCheckboxEl.checked;
+          this.renderDurationTable();
+        });
+      }
     });
   }
 
@@ -201,9 +260,22 @@ class AwareMeOptions {
     this.config.weeklyLimits.forEach((rule, index) => {
       const row = document.createElement('tr');
       const isEnabled = rule.status !== false; // 默认启用
+      const isStrict = rule.strict === true;
+
+      const strictCheckbox = isStrict
+        ? `<input type="checkbox" checked disabled title="严格模式已锁定">`
+        : `<input type="checkbox" ${isStrict ? 'checked' : ''} data-field="strict" data-index="${index}" title="启用严格模式后不可关闭和删除">`;
+
+      const actionButtons = isStrict
+        ? `<span class="locked-badge">🔒 已锁定</span>`
+        : `<button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-weekly-status" data-index="${index}">
+            ${isEnabled ? '关闭' : '启用'}
+          </button>
+          <button class="btn btn-danger btn-small delete-weekly-rule" data-index="${index}">删除</button>`;
+
       row.innerHTML = `
         <td>
-          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名">${(rule.domains || []).join('\n')}</textarea>
+          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名或关键词">${(rule.domains || []).join('\n')}</textarea>
         </td>
         <td>
           <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
@@ -214,24 +286,35 @@ class AwareMeOptions {
         <td>
           <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
         </td>
+        <td class="strict-cell">
+          ${strictCheckbox}
+        </td>
         <td>
-          <button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-weekly-status" data-index="${index}">
-            ${isEnabled ? '关闭' : '启用'}
-          </button>
-          <button class="btn btn-danger btn-small delete-weekly-rule" data-index="${index}">删除</button>
+          ${actionButtons}
         </td>
       `;
       tbody.appendChild(row);
 
-      // 绑定状态切换事件
-      row.querySelector('.toggle-weekly-status').addEventListener('click', () => {
-        this.toggleWeeklyRuleStatus(index);
-      });
+      if (!isStrict) {
+        // 绑定状态切换事件
+        row.querySelector('.toggle-weekly-status').addEventListener('click', () => {
+          this.toggleWeeklyRuleStatus(index);
+        });
 
-      // 绑定删除规则事件
-      row.querySelector('.delete-weekly-rule').addEventListener('click', () => {
-        this.removeWeeklyRule(index);
-      });
+        // 绑定删除规则事件
+        row.querySelector('.delete-weekly-rule').addEventListener('click', () => {
+          this.removeWeeklyRule(index);
+        });
+      }
+
+      // 绑定严格模式 checkbox 事件
+      const strictCheckboxEl = row.querySelector('.strict-cell input[type="checkbox"]:not([disabled])');
+      if (strictCheckboxEl) {
+        strictCheckboxEl.addEventListener('change', () => {
+          this.config.weeklyLimits[index].strict = strictCheckboxEl.checked;
+          this.renderWeeklyTable();
+        });
+      }
     });
   }
 
@@ -246,6 +329,10 @@ class AwareMeOptions {
   }
 
   removeVisitRule(index) {
+    if (this.config.visitReminders[index] && this.config.visitReminders[index].strict) {
+      this.showMessage('严格模式下不能删除此规则', 'error');
+      return;
+    }
     this.config.visitReminders.splice(index, 1);
     this.renderVisitTable();
   }
@@ -262,6 +349,10 @@ class AwareMeOptions {
   }
 
   removeDurationRule(index) {
+    if (this.config.durationLimits[index] && this.config.durationLimits[index].strict) {
+      this.showMessage('严格模式下不能删除此规则', 'error');
+      return;
+    }
     this.config.durationLimits.splice(index, 1);
     this.renderDurationTable();
   }
@@ -278,12 +369,21 @@ class AwareMeOptions {
   }
 
   removeWeeklyRule(index) {
+    if (this.config.weeklyLimits[index] && this.config.weeklyLimits[index].strict) {
+      this.showMessage('严格模式下不能删除此规则', 'error');
+      return;
+    }
     this.config.weeklyLimits.splice(index, 1);
     this.renderWeeklyTable();
   }
 
   toggleVisitRuleStatus(index) {
     if (this.config.visitReminders[index]) {
+      if (this.config.visitReminders[index].strict) {
+        this.showMessage('严格模式下不能关闭此规则', 'error');
+        this.renderVisitTable();
+        return;
+      }
       this.config.visitReminders[index].status = !this.config.visitReminders[index].status;
       this.renderVisitTable();
       this.saveConfig();
@@ -292,6 +392,11 @@ class AwareMeOptions {
 
   toggleDurationRuleStatus(index) {
     if (this.config.durationLimits[index]) {
+      if (this.config.durationLimits[index].strict) {
+        this.showMessage('严格模式下不能关闭此规则', 'error');
+        this.renderDurationTable();
+        return;
+      }
       this.config.durationLimits[index].status = !this.config.durationLimits[index].status;
       this.renderDurationTable();
       this.saveConfig();
@@ -300,6 +405,11 @@ class AwareMeOptions {
 
   toggleWeeklyRuleStatus(index) {
     if (this.config.weeklyLimits[index]) {
+      if (this.config.weeklyLimits[index].strict) {
+        this.showMessage('严格模式下不能关闭此规则', 'error');
+        this.renderWeeklyTable();
+        return;
+      }
       this.config.weeklyLimits[index].status = !this.config.weeklyLimits[index].status;
       this.renderWeeklyTable();
       this.saveConfig();
@@ -328,7 +438,10 @@ class AwareMeOptions {
       const index = parseInt(input.dataset.index);
       const field = input.dataset.field;
       if (this.config.visitReminders[index]) {
-        if (field === 'domains') {
+        if (input.type === 'checkbox') {
+          // checkbox 必须读 checked 而非 value（value 永远是 "on"）
+          this.config.visitReminders[index][field] = input.checked;
+        } else if (field === 'domains') {
           // 处理域名列表，将换行分隔的字符串转换为数组
           this.config.visitReminders[index][field] = input.value.split(/[\n,]/).map(d => d.trim()).filter(d => d);
         } else {
@@ -343,7 +456,9 @@ class AwareMeOptions {
       const index = parseInt(input.dataset.index);
       const field = input.dataset.field;
       if (this.config.durationLimits[index]) {
-        if (field === 'domains') {
+        if (input.type === 'checkbox') {
+          this.config.durationLimits[index][field] = input.checked;
+        } else if (field === 'domains') {
           // 处理域名列表，将换行分隔的字符串转换为数组
           this.config.durationLimits[index][field] = input.value.split(/[\n,]/).map(d => d.trim()).filter(d => d);
         } else if (field === 'minutes') {
@@ -360,7 +475,9 @@ class AwareMeOptions {
       const index = parseInt(input.dataset.index);
       const field = input.dataset.field;
       if (this.config.weeklyLimits[index]) {
-        if (field === 'domains') {
+        if (input.type === 'checkbox') {
+          this.config.weeklyLimits[index][field] = input.checked;
+        } else if (field === 'domains') {
           // 处理域名列表，将换行分隔的字符串转换为数组
           this.config.weeklyLimits[index][field] = input.value.split(/[\n,]/).map(d => d.trim()).filter(d => d);
         } else if (field === 'maxVisits') {
