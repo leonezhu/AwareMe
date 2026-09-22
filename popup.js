@@ -50,12 +50,6 @@ class AwareMePopup {
           console.log('今日访问次数:', todayVisits);
           document.getElementById('todayVisits').textContent = todayVisits;
 
-          // 获取今日在该网站的浏览时长
-          const todayDuration = await AwareMeStats.getTodayDuration(domain);
-          const minutes = Math.round(todayDuration / (1000 * 60));
-          console.log('今日浏览时长:', todayDuration, '分钟:', minutes);
-          document.getElementById('todayDuration').textContent = `${minutes} min`;
-
           // 获取本周在该网站的访问天数
           const weeklyVisits = await AwareMeStats.getWeeklyVisitDays(domain);
           console.log('本周访问天数:', weeklyVisits);

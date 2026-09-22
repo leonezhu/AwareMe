@@ -4,9 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AwareMe is a Chrome/Edge browser extension (Manifest V3) that helps users improve self-awareness and control attention while browsing. It provides three types of monitoring rules:
+AwareMe is a Chrome/Edge browser extension (Manifest V3) that helps users improve self-awareness and control attention while browsing. It provides two types of monitoring rules:
 - **Visit Reminders**: Show a reminder modal immediately when visiting specified websites
-- **Duration Limits**: Track browsing time and show reminders when exceeding limits
 - **Weekly Limits**: Track weekly visit frequency and block access when exceeding limits
 
 ## Development Commands
@@ -30,8 +29,8 @@ npm run package
 
 | File | Purpose |
 |------|---------|
-| `background.js` | Service worker - handles tab tracking, duration monitoring, access checks, and rule enforcement |
-| `content.js` | Content script - manages loading overlay, reminder modals, and video pausing on monitored pages |
+| `background.js` | Service worker - handles access checks and rule enforcement |
+| `content.js` | Content script - manages loading overlay and reminder modals on monitored pages |
 | `utils.js` | Shared utilities - `AwareMeUtils` (domain extraction, config loading) and `AwareMeStats` (statistics, data cleanup) |
 | `options.js` | Settings page - rule configuration and statistics display |
 | `popup.js` | Popup window - quick status view and extension toggle |
@@ -40,31 +39,38 @@ npm run package
 
 1. **Page Load**: `content.js` checks if domain is configured → shows loading overlay → sends `checkCurrentPage` to background
 2. **Background Processing**: `background.js` checks all rules → records visit → sends `showReminder` or `pageAllowed`
-3. **Duration Tracking**: Background tracks active tab time via `tabs.onActivated`, `tabs.onUpdated`, `windows.onFocusChanged`
-4. **Periodic Checks**: 40-second interval checks duration limits on active tab
 
 ### Storage Keys
 
 - `userConfig`: User configuration object
 - `isEnabled`: Extension enabled/disabled state
 - `visits_${date}`: Daily visit counts per domain (e.g., `visits_Mon Mar 14 2026`)
-- `duration_${date}`: Daily duration per domain in milliseconds
 - `weekly_${domain}_${weekStart}`: Weekly visit tracking per domain
 
 ### Configuration Structure
 
 ```javascript
 {
-  visitReminders: [{ domains: [], confirmTimes: 1, message: "", status: true }],
-  durationLimits: [{ domains: [], confirmTimes: 1, minutes: 30, message: "", status: true }],
-  weeklyLimits: [{ domains: [], confirmTimes: 1, maxVisits: 0, message: "", status: true }]
+  visitReminders: [{ domains: [], confirmTimes: 1, message: "", status: true, strict: false }],
+  weeklyLimits: [{ domains: [], confirmTimes: 1, maxVisits: 0, message: "", status: true, strict: false }]
 }
 ```
+
+### Strict Mode Rules
+
+Rules with `strict: true` are protected against self-bypass. Enabling strict mode is a deliberate flow: checking the checkbox only marks the rule as pending; clicking the table's save button validates the row data (`validateRuleData`), verifies the rule is not being weakened relative to its last saved state (`applyPendingStrict`), and asks for a `confirm()` before `strict` takes effect.
+
+`options.js` `saveConfig()` is the single write path for `userConfig` and validates against the last saved config before persisting (`findStrictViolations`). For strict rules, saves are rejected (and rolled back) when:
+- An existing domain is removed from the rule (adding domains is allowed)
+- `maxVisits` (max weekly visit days) is increased
+- `confirmTimes` is decreased
+
+This also blocks weakening via "恢复默认" (reset to defaults) and rule deletion. Note the UI lock is only cosmetic — the save-time validation is the real enforcement.
 
 ### Rule Matching
 
 - Domain matching uses `includes()` - a configured domain "weibo.com" matches "www.weibo.com" and "m.weibo.com"
-- Rules can group multiple domains together (e.g., group YouTube and Bilibili for combined duration tracking)
+- Rules can group multiple domains together (e.g., group GitHub and GitLab for combined weekly visit tracking)
 - `confirmTimes` controls how many times user must click "坚持访问" to dismiss the modal
 
 ### Message Types
@@ -77,16 +83,7 @@ Background ← → Content Script communication:
 - `closeCurrentTab`: Content → Background (close current tab)
 - `toggleExtension` / `getExtensionStatus`: Popup ↔ Background
 
-### Video Pausing
-
-For duration reminders, `content.js` pauses all videos including:
-- Native `<video>` elements
-- YouTube, Bilibili, Tencent Video, iQiyi, Youku, Douyin
-- Uses platform-specific play buttons and APIs
-- Monitors and re-pauses if video resumes during reminder
-
 ### Debug Functions
 
 Available in background page console:
 - `debugAwareMe()`: Log current extension state
-- `checkDurationLimitsNow()`: Manually trigger duration check

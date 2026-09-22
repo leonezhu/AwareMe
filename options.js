@@ -4,9 +4,15 @@ class AwareMeOptions {
   constructor() {
     this.config = {
       visitReminders: [],
-      durationLimits: [],
       weeklyLimits: []
     };
+    // 勾选了严格模式但尚未通过"保存 + 二次确认"生效的规则（存规则对象引用）
+    this.pendingStrict = {
+      visitReminders: new Set(),
+      weeklyLimits: new Set()
+    };
+    // 每条规则最近一次保存时的数据快照，用于开启严格模式时校验未同时放宽
+    this.ruleSnapshots = new Map();
     this.init();
   }
 
@@ -20,9 +26,26 @@ class AwareMeOptions {
   async loadConfig() {
     try {
       this.config = await AwareMeUtils.loadConfig();
+      this.snapshotRules();
     } catch (error) {
       console.error('加载配置失败:', error);
       this.showMessage('加载配置失败', 'error');
+    }
+  }
+
+  /**
+   * 记录每条规则最近一次保存时的数据，用于开启严格模式时校验"开启的同时没有放宽"
+   */
+  snapshotRules() {
+    this.ruleSnapshots.clear();
+    for (const listName of ['visitReminders', 'weeklyLimits']) {
+      for (const rule of this.config[listName] || []) {
+        this.ruleSnapshots.set(rule, {
+          domains: [...(rule.domains || [])],
+          confirmTimes: Number(rule.confirmTimes) || 1,
+          maxVisits: listName === 'weeklyLimits' ? (Number(rule.maxVisits) || 0) : 0
+        });
+      }
     }
   }
 
@@ -32,18 +55,113 @@ class AwareMeOptions {
       for (const rule of this.config.visitReminders) {
         if (rule.strict) { rule.status = true; rule.strict = true; }
       }
-      for (const rule of this.config.durationLimits) {
-        if (rule.strict) { rule.status = true; rule.strict = true; }
-      }
       for (const rule of this.config.weeklyLimits) {
         if (rule.strict) { rule.status = true; rule.strict = true; }
       }
+
+      // 与最近一次保存的配置对比，防止严格模式规则被削弱后写入
+      const savedConfig = await this.getSavedConfig();
+      const violations = this.findStrictViolations(this.config, savedConfig);
+      if (violations.length > 0) {
+        // 拒绝保存，并回滚到最近一次保存的合法配置
+        if (savedConfig) {
+          this.config = savedConfig;
+          this.renderAllTables();
+        }
+        this.showMessage(`🔒 严格模式保护：${violations.join('；')}`, 'error');
+        return false;
+      }
+
       await chrome.storage.local.set({ userConfig: this.config });
+      this.snapshotRules();
       this.showMessage('配置保存成功', 'success');
+      return true;
     } catch (error) {
       console.error('保存配置失败:', error);
       this.showMessage('保存配置失败', 'error');
+      return false;
     }
+  }
+
+  /**
+   * 读取最近一次保存到 storage 的配置，作为严格模式校验基线
+   */
+  async getSavedConfig() {
+    try {
+      const result = await chrome.storage.local.get(['userConfig']);
+      return result.userConfig || null;
+    } catch (error) {
+      console.error('读取已保存配置失败:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 校验严格模式规则未被削弱
+   * 规则：已有域名不能修改删除（只能新增）；每周可访问天数不能增大；确认次数只能增加不能减少
+   * @param {Object} newConfig - 待保存的配置
+   * @param {Object|null} savedConfig - 最近一次保存的配置
+   * @returns {Array<string>} 违规提示列表，为空表示通过
+   */
+  findStrictViolations(newConfig, savedConfig) {
+    const violations = [];
+    if (!savedConfig) return violations;
+
+    const checkCategory = (listName, label) => {
+      const oldRules = (savedConfig[listName] || []).filter(r => r && r.strict === true);
+      if (oldRules.length === 0) return;
+      const newStrictRules = (newConfig[listName] || []).filter(r => r && r.strict === true);
+
+      for (const oldRule of oldRules) {
+        const oldDomains = oldRule.domains || [];
+        if (oldDomains.length === 0) continue;
+        const ruleLabel = `严格${label}规则「${oldDomains.join('、')}」`;
+
+        // 按域名重合度找到对应的新规则（兼容规则增删和位置变化）
+        let matched = null;
+        let bestOverlap = 0;
+        for (const newRule of newStrictRules) {
+          const newDomainSet = new Set(newRule.domains || []);
+          const overlap = oldDomains.filter(d => newDomainSet.has(d)).length;
+          if (overlap > bestOverlap) {
+            bestOverlap = overlap;
+            matched = newRule;
+          }
+        }
+
+        if (!matched) {
+          violations.push(`${ruleLabel}被删除`);
+          continue;
+        }
+
+        // 已有域名不能移除（移到其他严格规则里也算移除）
+        const newDomainSet = new Set(matched.domains || []);
+        const removedDomains = oldDomains.filter(d => !newDomainSet.has(d));
+        if (removedDomains.length > 0) {
+          violations.push(`${ruleLabel}不能删除已有域名（${removedDomains.join('、')}）`);
+        }
+
+        // 确认次数只能增加不能减少
+        const oldTimes = Number(oldRule.confirmTimes) || 1;
+        const newTimes = Number(matched.confirmTimes) || 1;
+        if (newTimes < oldTimes) {
+          violations.push(`${ruleLabel}确认次数不能减少（${oldTimes} → ${newTimes}）`);
+        }
+
+        // 每周可访问天数不能增大
+        if (listName === 'weeklyLimits') {
+          const oldMax = Number(oldRule.maxVisits) || 0;
+          const newMax = Number(matched.maxVisits) || 0;
+          if (newMax > oldMax) {
+            violations.push(`${ruleLabel}每周可访问天数不能增大（${oldMax} → ${newMax}）`);
+          }
+        }
+      }
+    };
+
+    checkCategory('visitReminders', '访问提醒');
+    checkCategory('weeklyLimits', '周访问限制');
+    return violations;
   }
 
   bindEvents() {
@@ -63,17 +181,6 @@ class AwareMeOptions {
     });
     document.getElementById('resetVisitDefaults').addEventListener('click', () => {
       this.resetVisitDefaults();
-    });
-
-    // 时长监控相关事件
-    document.getElementById('addDurationRule').addEventListener('click', () => {
-      this.addDurationRule();
-    });
-    document.getElementById('saveDurationConfig').addEventListener('click', () => {
-      this.saveDurationConfig();
-    });
-    document.getElementById('resetDurationDefaults').addEventListener('click', () => {
-      this.resetDurationDefaults();
     });
 
     // 频率限制相关事件
@@ -114,7 +221,6 @@ class AwareMeOptions {
 
   renderAllTables() {
     this.renderVisitTable();
-    this.renderDurationTable();
     this.renderWeeklyTable();
   }
 
@@ -126,25 +232,28 @@ class AwareMeOptions {
       const row = document.createElement('tr');
       const isEnabled = rule.status !== false; // 默认启用
       const isStrict = rule.strict === true;
+      const isPending = !isStrict && this.pendingStrict.visitReminders.has(rule);
 
       // 严格模式下：checkbox 不可取消，隐藏关闭和删除按钮
       const strictCheckbox = isStrict
         ? `<input type="checkbox" checked disabled title="严格模式已锁定">`
-        : `<input type="checkbox" ${isStrict ? 'checked' : ''} data-field="strict" data-index="${index}" title="启用严格模式后不可关闭和删除">`;
+        : `<input type="checkbox" ${isPending ? 'checked' : ''} data-field="strict" data-index="${index}" title="勾选后需点击保存并二次确认后才生效">`;
+
+      const strictHint = isStrict ? 'title="严格模式：只能调大，保存时不能调小"' : '';
 
       const actionButtons = isStrict
         ? `<span class="locked-badge">🔒 已锁定</span>`
-        : `<button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-visit-status" data-index="${index}">
+        : `${isPending ? '<span class="pending-badge">⏳ 待保存确认</span>' : ''}<button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-visit-status" data-index="${index}">
             ${isEnabled ? '关闭' : '启用'}
           </button>
           <button class="btn btn-danger btn-small delete-visit-rule" data-index="${index}">删除</button>`;
 
       row.innerHTML = `
        <td>
-          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名或关键词">${(rule.domains || []).join('\n')}</textarea>
+          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名或关键词" ${strictHint}>${(rule.domains || []).join('\n')}</textarea>
         </td>
         <td>
-          <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
+          <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10" ${strictHint}>
         </td>
         <td>
           <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
@@ -171,10 +280,17 @@ class AwareMeOptions {
       }
 
       // 绑定严格模式 checkbox 事件（仅非严格模式下可点击）
+      // 勾选只标记"待确认"，不直接生效；点击保存并二次确认后才开启
       const strictCheckboxEl = row.querySelector('.strict-cell input[type="checkbox"]:not([disabled])');
       if (strictCheckboxEl) {
         strictCheckboxEl.addEventListener('change', () => {
-          this.config.visitReminders[index].strict = strictCheckboxEl.checked;
+          const rule = this.config.visitReminders[index];
+          if (strictCheckboxEl.checked) {
+            this.pendingStrict.visitReminders.add(rule);
+            this.showMessage('已勾选严格模式，点击"保存"按钮并二次确认后生效', 'success');
+          } else {
+            this.pendingStrict.visitReminders.delete(rule);
+          }
           this.renderVisitTable();
         });
       }
@@ -188,71 +304,6 @@ class AwareMeOptions {
     }
   }
 
-  renderDurationTable() {
-    const tbody = document.getElementById('durationTableBody');
-    tbody.innerHTML = '';
-
-    this.config.durationLimits.forEach((rule, index) => {
-      const row = document.createElement('tr');
-      const isEnabled = rule.status !== false; // 默认启用
-      const isStrict = rule.strict === true;
-
-      const strictCheckbox = isStrict
-        ? `<input type="checkbox" checked disabled title="严格模式已锁定">`
-        : `<input type="checkbox" ${isStrict ? 'checked' : ''} data-field="strict" data-index="${index}" title="启用严格模式后不可关闭和删除">`;
-
-      const actionButtons = isStrict
-        ? `<span class="locked-badge">🔒 已锁定</span>`
-        : `<button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-duration-status" data-index="${index}">
-            ${isEnabled ? '关闭' : '启用'}
-          </button>
-          <button class="btn btn-danger btn-small delete-duration-rule" data-index="${index}">删除</button>`;
-
-      row.innerHTML = `
-        <td>
-          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名或关键词">${(rule.domains || []).join('\n')}</textarea>
-        </td>
-        <td>
-          <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
-        </td>
-        <td>
-          <input type="number" value="${rule.minutes}" data-field="minutes" data-index="${index}" min="1">
-        </td>
-        <td>
-          <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
-        </td>
-        <td class="strict-cell">
-          ${strictCheckbox}
-        </td>
-        <td>
-          ${actionButtons}
-        </td>
-      `;
-      tbody.appendChild(row);
-
-      if (!isStrict) {
-        // 绑定状态切换事件
-        row.querySelector('.toggle-duration-status').addEventListener('click', () => {
-          this.toggleDurationRuleStatus(index);
-        });
-
-        // 绑定删除规则事件
-        row.querySelector('.delete-duration-rule').addEventListener('click', () => {
-          this.removeDurationRule(index);
-        });
-      }
-
-      // 绑定严格模式 checkbox 事件
-      const strictCheckboxEl = row.querySelector('.strict-cell input[type="checkbox"]:not([disabled])');
-      if (strictCheckboxEl) {
-        strictCheckboxEl.addEventListener('change', () => {
-          this.config.durationLimits[index].strict = strictCheckboxEl.checked;
-          this.renderDurationTable();
-        });
-      }
-    });
-  }
-
   renderWeeklyTable() {
     const tbody = document.getElementById('weeklyTableBody');
     tbody.innerHTML = '';
@@ -261,27 +312,30 @@ class AwareMeOptions {
       const row = document.createElement('tr');
       const isEnabled = rule.status !== false; // 默认启用
       const isStrict = rule.strict === true;
+      const isPending = !isStrict && this.pendingStrict.weeklyLimits.has(rule);
 
       const strictCheckbox = isStrict
         ? `<input type="checkbox" checked disabled title="严格模式已锁定">`
-        : `<input type="checkbox" ${isStrict ? 'checked' : ''} data-field="strict" data-index="${index}" title="启用严格模式后不可关闭和删除">`;
+        : `<input type="checkbox" ${isPending ? 'checked' : ''} data-field="strict" data-index="${index}" title="勾选后需点击保存并二次确认后才生效">`;
+
+      const strictHint = isStrict ? 'title="严格模式：域名只能新增；确认次数只能调大；每周可访问天数只能调小"' : '';
 
       const actionButtons = isStrict
         ? `<span class="locked-badge">🔒 已锁定</span>`
-        : `<button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-weekly-status" data-index="${index}">
+        : `${isPending ? '<span class="pending-badge">⏳ 待保存确认</span>' : ''}<button class="btn ${isEnabled ? 'btn-secondary' : 'btn-primary'} btn-small toggle-weekly-status" data-index="${index}">
             ${isEnabled ? '关闭' : '启用'}
           </button>
           <button class="btn btn-danger btn-small delete-weekly-rule" data-index="${index}">删除</button>`;
 
       row.innerHTML = `
         <td>
-          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名或关键词">${(rule.domains || []).join('\n')}</textarea>
+          <textarea data-field="domains" data-index="${index}" rows="2" placeholder="每行一个域名或关键词" ${strictHint}>${(rule.domains || []).join('\n')}</textarea>
         </td>
         <td>
-          <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10">
+          <input type="number" value="${rule.confirmTimes || 1}" data-field="confirmTimes" data-index="${index}" placeholder="确认次数" min="1" max="10" ${strictHint}>
         </td>
         <td>
-          <input type="number" value="${rule.maxVisits}" data-field="maxVisits" data-index="${index}" min="0">
+          <input type="number" value="${rule.maxVisits}" data-field="maxVisits" data-index="${index}" min="0" ${strictHint}>
         </td>
         <td>
           <textarea data-field="message" data-index="${index}" rows="2">${rule.message}</textarea>
@@ -308,10 +362,17 @@ class AwareMeOptions {
       }
 
       // 绑定严格模式 checkbox 事件
+      // 勾选只标记"待确认"，不直接生效；点击保存并二次确认后才开启
       const strictCheckboxEl = row.querySelector('.strict-cell input[type="checkbox"]:not([disabled])');
       if (strictCheckboxEl) {
         strictCheckboxEl.addEventListener('change', () => {
-          this.config.weeklyLimits[index].strict = strictCheckboxEl.checked;
+          const rule = this.config.weeklyLimits[index];
+          if (strictCheckboxEl.checked) {
+            this.pendingStrict.weeklyLimits.add(rule);
+            this.showMessage('已勾选严格模式，点击"保存"按钮并二次确认后生效', 'success');
+          } else {
+            this.pendingStrict.weeklyLimits.delete(rule);
+          }
           this.renderWeeklyTable();
         });
       }
@@ -335,26 +396,6 @@ class AwareMeOptions {
     }
     this.config.visitReminders.splice(index, 1);
     this.renderVisitTable();
-  }
-
-  addDurationRule() {
-    this.config.durationLimits.push({
-      confirmTimes: 1,
-      domains: [],
-      minutes: 30,
-      message: '',
-      status: true
-    });
-    this.renderDurationTable();
-  }
-
-  removeDurationRule(index) {
-    if (this.config.durationLimits[index] && this.config.durationLimits[index].strict) {
-      this.showMessage('严格模式下不能删除此规则', 'error');
-      return;
-    }
-    this.config.durationLimits.splice(index, 1);
-    this.renderDurationTable();
   }
 
   addWeeklyRule() {
@@ -390,19 +431,6 @@ class AwareMeOptions {
     }
   }
 
-  toggleDurationRuleStatus(index) {
-    if (this.config.durationLimits[index]) {
-      if (this.config.durationLimits[index].strict) {
-        this.showMessage('严格模式下不能关闭此规则', 'error');
-        this.renderDurationTable();
-        return;
-      }
-      this.config.durationLimits[index].status = !this.config.durationLimits[index].status;
-      this.renderDurationTable();
-      this.saveConfig();
-    }
-  }
-
   toggleWeeklyRuleStatus(index) {
     if (this.config.weeklyLimits[index]) {
       if (this.config.weeklyLimits[index].strict) {
@@ -416,19 +444,123 @@ class AwareMeOptions {
     }
   }
 
-  saveVisitConfig() {
+  async saveVisitConfig() {
     this.updateConfigFromTable();
-    this.saveConfig();
+    if (!this.applyPendingStrict('visitReminders')) return;
+    await this.saveConfig();
+    this.renderVisitTable();
   }
 
-  saveDurationConfig() {
+  async saveWeeklyConfig() {
     this.updateConfigFromTable();
-    this.saveConfig();
+    if (!this.applyPendingStrict('weeklyLimits')) return;
+    await this.saveConfig();
+    this.renderWeeklyTable();
   }
 
-  saveWeeklyConfig() {
-    this.updateConfigFromTable();
-    this.saveConfig();
+  /**
+   * 处理本次保存中勾选的严格模式：
+   * 1. 校验行数据完整（验全）；2. 校验开启的同时没有比已保存状态放宽；
+   * 3. 二次确认后才真正开启。取消确认则本次不开启，其余修改仍会保存
+   * @param {string} listName - 'visitReminders' | 'weeklyLimits'
+   * @returns {boolean} 是否继续执行保存
+   */
+  applyPendingStrict(listName) {
+    const pendingRules = this.pendingStrict[listName];
+    if (pendingRules.size === 0) return true;
+
+    const list = this.config[listName];
+    const label = listName === 'visitReminders' ? '访问提醒' : '周访问限制';
+
+    // 清理已删除行的残留引用
+    for (const rule of [...pendingRules]) {
+      if (!list.includes(rule)) pendingRules.delete(rule);
+    }
+    if (pendingRules.size === 0) return true;
+
+    // 1. 行数据验全
+    for (const rule of pendingRules) {
+      const errors = this.validateRuleData(listName, rule);
+      if (errors.length > 0) {
+        this.showMessage(`开启严格模式前需先完善该行数据：${errors.join('；')}`, 'error');
+        return false;
+      }
+    }
+
+    // 2. 开启严格模式只能收紧不能放宽，防止"放宽后立刻锁死"
+    for (const rule of pendingRules) {
+      const snapshot = this.ruleSnapshots.get(rule);
+      if (!snapshot) continue; // 本次新增的规则没有已保存状态
+      const weakenErrors = [];
+      const newDomainSet = new Set(rule.domains || []);
+      const removed = snapshot.domains.filter(d => !newDomainSet.has(d));
+      if (removed.length > 0) {
+        weakenErrors.push(`不能删除已有域名（${removed.join('、')}）`);
+      }
+      const oldTimes = snapshot.confirmTimes;
+      const newTimes = Number(rule.confirmTimes) || 1;
+      if (newTimes < oldTimes) {
+        weakenErrors.push(`确认次数不能减少（${oldTimes} → ${newTimes}）`);
+      }
+      if (listName === 'weeklyLimits') {
+        const oldMax = snapshot.maxVisits;
+        const newMax = Number(rule.maxVisits) || 0;
+        if (newMax > oldMax) {
+          weakenErrors.push(`每周可访问天数不能增大（${oldMax} → ${newMax}）`);
+        }
+      }
+      if (weakenErrors.length > 0) {
+        this.showMessage(`开启严格模式时不能同时放宽规则：${weakenErrors.join('；')}。请先单独保存收紧后的配置，再开启严格模式`, 'error');
+        return false;
+      }
+    }
+
+    // 3. 二次确认
+    const extra = listName === 'weeklyLimits' ? '、每周可访问天数只能调小' : '';
+    const confirmed = confirm(
+      `确认开启严格模式？开启后将立即保存并锁定选中的 ${pendingRules.size} 条${label}规则：` +
+      `不可关闭、不可删除，域名只能新增，确认次数只能调大${extra}。`
+    );
+    if (!confirmed) {
+      for (const rule of pendingRules) { rule.strict = false; }
+      pendingRules.clear();
+      return true;
+    }
+
+    // 4. 开启（saveConfig 会写入 storage 并刷新快照）
+    for (const rule of pendingRules) {
+      rule.strict = true;
+      rule.status = true;
+    }
+    pendingRules.clear();
+    return true;
+  }
+
+  /**
+   * 校验单条规则数据完整性（开启严格模式前调用）
+   * @param {string} listName - 'visitReminders' | 'weeklyLimits'
+   * @param {Object} rule - 规则
+   * @returns {Array<string>} 错误列表，为空表示通过
+   */
+  validateRuleData(listName, rule) {
+    const errors = [];
+    if (!rule.domains || rule.domains.length === 0) {
+      errors.push('至少填写一个域名');
+    }
+    const times = Number(rule.confirmTimes);
+    if (!Number.isInteger(times) || times < 1 || times > 10) {
+      errors.push('确认次数需为1-10的整数');
+    }
+    if (listName === 'weeklyLimits') {
+      const maxVisits = Number(rule.maxVisits);
+      if (!Number.isInteger(maxVisits) || maxVisits < 0) {
+        errors.push('每周可访问天数需为不小于0的整数');
+      }
+    }
+    if (!rule.message || !String(rule.message).trim()) {
+      errors.push('提醒消息不能为空');
+    }
+    return errors;
   }
 
   updateConfigFromTable() {
@@ -438,6 +570,8 @@ class AwareMeOptions {
       const index = parseInt(input.dataset.index);
       const field = input.dataset.field;
       if (this.config.visitReminders[index]) {
+        // strict 勾选由"保存时验全 + 二次确认"流程管理，这里跳过
+        if (field === 'strict') return;
         if (input.type === 'checkbox') {
           // checkbox 必须读 checked 而非 value（value 永远是 "on"）
           this.config.visitReminders[index][field] = input.checked;
@@ -450,31 +584,14 @@ class AwareMeOptions {
       }
     });
 
-    // 更新时长限制配置
-    const durationInputs = document.querySelectorAll('#durationTableBody input, #durationTableBody textarea');
-    durationInputs.forEach(input => {
-      const index = parseInt(input.dataset.index);
-      const field = input.dataset.field;
-      if (this.config.durationLimits[index]) {
-        if (input.type === 'checkbox') {
-          this.config.durationLimits[index][field] = input.checked;
-        } else if (field === 'domains') {
-          // 处理域名列表，将换行分隔的字符串转换为数组
-          this.config.durationLimits[index][field] = input.value.split(/[\n,]/).map(d => d.trim()).filter(d => d);
-        } else if (field === 'minutes') {
-          this.config.durationLimits[index][field] = parseInt(input.value) || 1;
-        } else {
-          this.config.durationLimits[index][field] = input.value;
-        }
-      }
-    });
-
     // 更新周访问限制配置
     const weeklyInputs = document.querySelectorAll('#weeklyTableBody input, #weeklyTableBody textarea');
     weeklyInputs.forEach(input => {
       const index = parseInt(input.dataset.index);
       const field = input.dataset.field;
       if (this.config.weeklyLimits[index]) {
+        // strict 勾选由"保存时验全 + 二次确认"流程管理，这里跳过
+        if (field === 'strict') return;
         if (input.type === 'checkbox') {
           this.config.weeklyLimits[index][field] = input.checked;
         } else if (field === 'domains') {
@@ -495,30 +612,24 @@ class AwareMeOptions {
       const defaultConfig = await response.json();
       this.config.visitReminders = defaultConfig.visitReminders;
       this.renderVisitTable();
-      await this.saveConfig();
-      this.showMessage('已恢复默认配置', 'success');
-    }
-  }
-
-  async resetDurationDefaults() {
-    if (confirm('确定要恢复时长监控的默认配置吗？')) {
-      const response = await fetch(chrome.runtime.getURL('data/default-config.json'));
-      const defaultConfig = await response.json();
-      this.config.durationLimits = defaultConfig.durationLimits;
-      this.renderDurationTable();
-      await this.saveConfig();
-      this.showMessage('已恢复默认配置', 'success');
+      const saved = await this.saveConfig();
+      // 严格模式校验失败时 saveConfig 内部已回滚并提示错误，不再覆盖提示成功
+      if (saved) {
+        this.showMessage('已恢复默认配置', 'success');
+      }
     }
   }
 
   async resetWeeklyDefaults() {
-    if (confirm('确定要恢复频率限制的默认配置吗？')) {
+    if (confirm('确定要恢复周访问限制的默认配置吗？')) {
       const response = await fetch(chrome.runtime.getURL('data/default-config.json'));
       const defaultConfig = await response.json();
       this.config.weeklyLimits = defaultConfig.weeklyLimits;
       this.renderWeeklyTable();
-      await this.saveConfig();
-      this.showMessage('已恢复默认配置', 'success');
+      const saved = await this.saveConfig();
+      if (saved) {
+        this.showMessage('已恢复默认配置', 'success');
+      }
     }
   }
 
@@ -545,7 +656,6 @@ class AwareMeOptions {
     
     // 分类存储数据
     const visitData = {};
-    const durationData = {};
     const domains = new Set();
     
     // 处理所有数据
@@ -556,14 +666,11 @@ class AwareMeOptions {
         for (const domain of Object.keys(value)) {
           domains.add(domain);
         }
-      } else if (key.startsWith('duration_')) {
-        durationData[key] = value;
       }
     }
     
     // 获取今日访问数据
     const todayVisits = visitData[`visits_${today}`] || {};
-    const todayDurations = durationData[`duration_${today}`] || {};
     
     // 按今日访问次数降序排序域名
     const domainStats = [];
@@ -582,10 +689,6 @@ class AwareMeOptions {
       // 获取当日访问次数
       const todayVisitCount = todayVisits[domain] || 0;
       
-      // 获取当日访问时长
-      const todayDuration = todayDurations[domain] || 0;
-      const todayDurationMinutes = Math.round(todayDuration / (1000 * 60));
-      
       // 使用工具类计算周访问天数
       const weeklyVisitDays = await AwareMeStats.getWeeklyVisitDays(domain);
       
@@ -594,7 +697,6 @@ class AwareMeOptions {
       row.innerHTML = `
         <td>${domain}</td>
         <td>${todayVisitCount}</td>
-        <td>${todayDurationMinutes}</td>
         <td>${weeklyVisitDays}</td>
       `;
       tbody.appendChild(row);

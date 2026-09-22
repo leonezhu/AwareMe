@@ -5,14 +5,30 @@ class AwareMeContent {
     this.reminderModal = null;
     this.loadingOverlay = null;
     this.isPageAllowed = false;
-    this.videoMonitorInterval = null; // 视频监控定时器
     this.overlayTimeout = null; // 遮罩超时定时器
+    this.recheckTimer = null; // 检查重试定时器
     this.init();
   }
 
   async init() {
     console.log('AwareMe: Content script 初始化开始');
-    
+
+    // 同步注册消息监听器，必须在任何 await 之前，避免后台早期发来的 showReminder/pageAllowed 丢失
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (message.type === 'showReminder') {
+        this.removeLoadingOverlay();
+        this.showReminderModal(message.message, message.reminderType, message.data);
+        sendResponse({ success: true });
+      } else if (message.type === 'pageAllowed') {
+        // 页面被允许访问，移除遮罩
+        console.log('AwareMe: 收到页面允许访问消息');
+        this.isPageAllowed = true;
+        this.removeLoadingOverlay();
+        sendResponse({ success: true });
+      }
+      return true; // 保持消息通道开放
+    });
+
     // 先检查当前域名是否需要监控，只有需要监控的域名才显示遮罩
     const shouldShowOverlay = await this.shouldShowLoadingOverlay();
     
@@ -38,23 +54,7 @@ class AwareMeContent {
     } else {
       this.initAfterDOMLoaded(shouldShowOverlay);
     }
-    
-    // 监听来自后台脚本的消息
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      if (message.type === 'showReminder') {
-        this.removeLoadingOverlay();
-        this.showReminderModal(message.message, message.reminderType, message.data);
-        sendResponse({ success: true });
-      } else if (message.type === 'pageAllowed') {
-        // 页面被允许访问，移除遮罩
-        console.log('AwareMe: 收到页面允许访问消息');
-        this.isPageAllowed = true;
-        this.removeLoadingOverlay();
-        sendResponse({ success: true });
-      }
-      return true; // 保持消息通道开放
-    });
-    
+
     // 添加页面卸载保护
     this.setupUnloadProtection();
     
@@ -217,6 +217,11 @@ class AwareMeContent {
         clearTimeout(this.overlayTimeout);
         this.overlayTimeout = null;
       }
+      // 清除检查重试定时器
+      if (this.recheckTimer) {
+        clearTimeout(this.recheckTimer);
+        this.recheckTimer = null;
+      }
       // 恢复页面滚动
       if (document.body) {
         document.body.classList.remove('awareme-no-scroll');
@@ -227,14 +232,40 @@ class AwareMeContent {
   }
 
   setupOverlayTimeout() {
-    // 设置8秒超时，防止遮罩一直显示
+    // 设置8秒超时：超时后不自动放行，保持遮罩并重新请求检查（防止通过超时绕过拦截）
     this.overlayTimeout = setTimeout(() => {
       if (this.loadingOverlay && !this.isPageAllowed) {
-        console.warn('AwareMe: 检查超时，自动移除遮罩允许访问');
-        this.isPageAllowed = true;
-        this.removeLoadingOverlay();
+        console.warn('AwareMe: 检查超时，保持遮罩并重新请求检查');
+        this.setOverlayText('检查超时，正在重试...');
+        this.scheduleRecheck(0);
       }
-    }, 8000); 
+    }, 8000);
+  }
+
+  setOverlayText(text) {
+    const textEl = this.loadingOverlay?.querySelector('.awareme-loading-text');
+    if (textEl) {
+      textEl.textContent = text;
+    }
+  }
+
+  scheduleRecheck(delay = 3000) {
+    // 已有重试排队时不重复排队
+    if (this.recheckTimer) {
+      return;
+    }
+    this.recheckTimer = setTimeout(() => {
+      this.recheckTimer = null;
+      // 扩展被重载/更新后上下文失效，停止重试避免无限循环报错
+      if (!AwareMeUtils.isExtensionContextValid()) {
+        console.warn('AwareMe: 扩展上下文已失效，停止检查，请刷新页面');
+        this.setOverlayText('插件已更新，请刷新页面');
+        return;
+      }
+      if (this.loadingOverlay && !this.isPageAllowed) {
+        this.checkCurrentPage();
+      }
+    }, delay);
   }
 
   async checkCurrentPage() {
@@ -269,10 +300,16 @@ class AwareMeContent {
         console.log('AwareMe: 页面检查请求发送成功');
       } catch (error) {
         console.error(`AwareMe: 页面检查失败 (第${retryCount + 1}次):`, error);
-        
+
+        // 扩展被重载/更新后上下文失效，停止重试避免无限循环报错
+        if (error.message.includes('Extension context invalidated') || !AwareMeUtils.isExtensionContextValid()) {
+          console.warn('AwareMe: 扩展上下文已失效，停止检查，请刷新页面');
+          this.setOverlayText('插件已更新，请刷新页面');
+          return;
+        }
+
         // 如果是连接错误，尝试重试
-        if ((error.message.includes('Receiving end does not exist') || 
-            error.message.includes('Extension context invalidated') ||
+        if ((error.message.includes('Receiving end does not exist') ||
             error.message.includes('请求超时')) && retryCount < maxRetries) {
           retryCount++;
           // 简化重试间隔：500ms, 1000ms
@@ -280,10 +317,10 @@ class AwareMeContent {
           console.log(`AwareMe: Background script未准备好，${delay}ms后重试`);
           setTimeout(attemptCheck, delay);
         } else {
-          // 重试次数用完或其他错误，直接允许访问
-          console.warn('AwareMe: 检查失败或超时，允许访问页面');
-          this.isPageAllowed = true;
-          this.removeLoadingOverlay();
+          // 重试次数用完或其他错误：不放行，保持遮罩并稍后重新检查（防止绕过拦截）
+          console.warn('AwareMe: 检查失败或超时，保持遮罩稍后重试');
+          this.setOverlayText('检查暂时不可用，正在重试...');
+          this.scheduleRecheck(3000);
         }
       }
     };
@@ -353,17 +390,16 @@ class AwareMeContent {
     // 检测并处理全屏模式
     this.handleFullscreenMode();
 
-    // 如果是时长限制提醒，暂停所有视频播放
-    if (type === 'duration') {
-      this.pauseAllVideos();
-    }
-
     // 创建提醒模态框
     this.reminderModal = this.createReminderModal(message, type, data);
-    document.body.appendChild(this.reminderModal);
-    
+    // document_start 阶段 body 可能尚未生成，退回到 documentElement
+    const container = document.body || document.documentElement;
+    container.appendChild(this.reminderModal);
+
     // 防止页面滚动
-    document.body.classList.add('awareme-no-scroll');
+    if (document.body) {
+      document.body.classList.add('awareme-no-scroll');
+    }
 
     // 1秒后自动显示关闭按钮和关闭网页按钮
     setTimeout(() => {
@@ -418,7 +454,6 @@ class AwareMeContent {
   getIconForType(type) {
     const icons = {
       visit: '🔔',
-      duration: '⏰',
       weekly: '📊'
     };
     return icons[type] || '💡';
@@ -431,11 +466,6 @@ class AwareMeContent {
     // 替换访问次数占位符
     if (data.visitCount !== undefined) {
       formattedMessage = formattedMessage.replace(/\{\{limitNum\}\}/g, data.visitCount);
-    }
-    
-    // 替换访问时长占位符
-    if (data.durationMinutes !== undefined) {
-      formattedMessage = formattedMessage.replace(/\{\{limitTime\}\}/g, data.durationMinutes);
     }
     
     // 支持简单的 Markdown 格式
@@ -467,7 +497,7 @@ class AwareMeContent {
         width: 100%;
         height: 100%;
         background: rgba(54, 69, 79, 0.9);
-        backdrop-filter: blur(2px);
+        backdrop-filter: blur(16px);
         z-index: 1;
         transition: opacity 0.2s ease;
         overflow: hidden;
@@ -613,8 +643,6 @@ class AwareMeContent {
       if (clickCount >= confirmTimes) {
         // 达到确认次数，关闭模态框
         this.closeModal(modal);
-        // 如果用户坚持访问，可以选择恢复视频播放（可选功能）
-        this.resumePausedVideos();
         return;
       }
       
@@ -723,261 +751,6 @@ class AwareMeContent {
     window.addEventListener('focus', handleFocus, { passive: true });
   }
 
-  pauseAllVideos() {
-    console.log('AwareMe: 暂停所有视频播放');
-    
-    // 查找所有video元素并暂停
-    const videos = document.querySelectorAll('video');
-    videos.forEach(video => {
-      if (!video.paused) {
-        console.log('AwareMe: 暂停视频:', video.src || video.currentSrc || '未知来源');
-        video.pause();
-        // 标记这个视频是被AwareMe暂停的
-        video.setAttribute('data-awareme-paused', 'true');
-      }
-    });
-
-    // 查找iframe中的视频（如嵌入的YouTube、B站等）
-    this.pauseVideosInIframes();
-
-    // 尝试暂停YouTube视频
-    this.pauseYouTubeVideo();
-    
-    // 尝试暂停B站视频
-    this.pauseBilibiliVideo();
-    
-    // 尝试暂停其他常见视频网站
-    this.pauseOtherVideoSites();
-
-    // 启动视频监控，确保在弹窗期间视频保持暂停
-    this.startVideoMonitoring();
-  }
-
-  pauseYouTubeVideo() {
-    // YouTube的暂停按钮
-    const youtubePlayButton = document.querySelector('.ytp-play-button[aria-label*="暂停"], .ytp-play-button[aria-label*="Pause"]');
-    if (youtubePlayButton) {
-      console.log('AwareMe: 点击YouTube暂停按钮');
-      youtubePlayButton.click();
-      return;
-    }
-
-    // 尝试通过YouTube API暂停
-    if (window.ytplayer && window.ytplayer.pauseVideo) {
-      console.log('AwareMe: 通过YouTube API暂停视频');
-      window.ytplayer.pauseVideo();
-      return;
-    }
-
-    // 尝试通过全局YouTube播放器暂停
-    if (window.yt && window.yt.player && window.yt.player.getPlayerByElement) {
-      const playerElement = document.querySelector('#movie_player, .html5-video-player');
-      if (playerElement) {
-        const player = window.yt.player.getPlayerByElement(playerElement);
-        if (player && player.pauseVideo) {
-          console.log('AwareMe: 通过YouTube播放器API暂停视频');
-          player.pauseVideo();
-        }
-      }
-    }
-  }
-
-  pauseBilibiliVideo() {
-    // B站的暂停按钮
-    const bilibiliPlayButton = document.querySelector('.bpx-player-ctrl-play, .bilibili-player-video-btn-start');
-    if (bilibiliPlayButton && bilibiliPlayButton.classList.contains('bpx-state-paused') === false) {
-      console.log('AwareMe: 点击B站暂停按钮');
-      bilibiliPlayButton.click();
-      return;
-    }
-
-    // 尝试通过B站播放器API暂停
-    if (window.player && window.player.pause) {
-      console.log('AwareMe: 通过B站播放器API暂停视频');
-      window.player.pause();
-    }
-  }
-
-  pauseOtherVideoSites() {
-    // 腾讯视频
-    const tencentPlayButton = document.querySelector('.txp-btn-play, .txp-btn-pause');
-    if (tencentPlayButton && !tencentPlayButton.classList.contains('txp-btn-play')) {
-      console.log('AwareMe: 点击腾讯视频暂停按钮');
-      tencentPlayButton.click();
-      return;
-    }
-
-    // 爱奇艺
-    const iqiyiPlayButton = document.querySelector('.iqp-btn-play, .iqp-btn-pause');
-    if (iqiyiPlayButton && iqiyiPlayButton.classList.contains('iqp-btn-pause')) {
-      console.log('AwareMe: 点击爱奇艺暂停按钮');
-      iqiyiPlayButton.click();
-      return;
-    }
-
-    // 优酷
-    const youkuPlayButton = document.querySelector('.control-play-pause');
-    if (youkuPlayButton && youkuPlayButton.getAttribute('data-status') === 'play') {
-      console.log('AwareMe: 点击优酷暂停按钮');
-      youkuPlayButton.click();
-      return;
-    }
-
-    // 抖音
-    const douyinPlayButton = document.querySelector('[data-e2e="video-play-button"]');
-    if (douyinPlayButton) {
-      console.log('AwareMe: 点击抖音暂停按钮');
-      douyinPlayButton.click();
-      return;
-    }
-
-    // 通用的播放/暂停按钮选择器
-    const commonSelectors = [
-      '[aria-label*="暂停"], [aria-label*="Pause"]',
-      '.pause-button, .play-pause-button',
-      '[data-testid="pause-button"]',
-      '.video-controls .pause',
-      '.player-controls .pause',
-      '.vjs-play-control[title*="暂停"], .vjs-play-control[title*="Pause"]',
-      '.plyr__control--overlaid[data-plyr="pause"]',
-      '.dplayer-play-icon'
-    ];
-
-    for (const selector of commonSelectors) {
-      const button = document.querySelector(selector);
-      if (button && button.offsetParent !== null) { // 确保按钮可见
-        console.log('AwareMe: 点击通用暂停按钮:', selector);
-        button.click();
-        break;
-      }
-    }
-
-    // 尝试通过键盘事件暂停（空格键）
-    const videoContainer = document.querySelector('video, .video-player, .player-container');
-    if (videoContainer) {
-      console.log('AwareMe: 尝试通过空格键暂停视频');
-      const spaceKeyEvent = new KeyboardEvent('keydown', {
-        key: ' ',
-        code: 'Space',
-        keyCode: 32,
-        which: 32,
-        bubbles: true,
-        cancelable: true
-      });
-      videoContainer.dispatchEvent(spaceKeyEvent);
-    }
-  }
-
-  resumePausedVideos() {
-    console.log('AwareMe: 恢复被暂停的视频播放');
-    
-    // 恢复所有被AwareMe暂停的video元素
-    const videos = document.querySelectorAll('video[data-awareme-paused="true"]');
-    videos.forEach(video => {
-      console.log('AwareMe: 恢复视频播放:', video.src || video.currentSrc || '未知来源');
-      video.play().catch(error => {
-        console.log('AwareMe: 视频恢复播放失败:', error);
-      });
-      // 移除暂停标记
-      video.removeAttribute('data-awareme-paused');
-    });
-
-    // 注意：对于通过点击按钮暂停的视频（如YouTube、B站等），
-     // 我们不自动恢复播放，因为这可能会干扰用户的正常操作
-     // 用户可以手动点击播放按钮来恢复
-   }
-
-  pauseVideosInIframes() {
-    console.log('AwareMe: 检查iframe中的视频');
-    
-    const iframes = document.querySelectorAll('iframe');
-    iframes.forEach(iframe => {
-      try {
-        // 尝试访问iframe内容（同源策略限制）
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-        if (iframeDoc) {
-          const iframeVideos = iframeDoc.querySelectorAll('video');
-          iframeVideos.forEach(video => {
-            if (!video.paused) {
-              console.log('AwareMe: 暂停iframe中的视频:', video.src || video.currentSrc || '未知来源');
-              video.pause();
-              video.setAttribute('data-awareme-paused', 'true');
-            }
-          });
-        }
-      } catch (error) {
-        // 跨域iframe无法访问，这是正常情况
-        console.log('AwareMe: 无法访问iframe内容（跨域限制）:', iframe.src);
-      }
-    });
-  }
-
-  startVideoMonitoring() {
-    // 如果已经在监控，先停止
-    if (this.videoMonitorInterval) {
-      clearInterval(this.videoMonitorInterval);
-    }
-
-    console.log('AwareMe: 启动视频监控');
-    
-    // 每2秒检查一次视频状态
-    this.videoMonitorInterval = setInterval(() => {
-      // 只在有提醒弹窗时进行监控
-      if (!this.reminderModal) {
-        this.stopVideoMonitoring();
-        return;
-      }
-
-      // 检查所有video元素，如果有新的视频开始播放，立即暂停
-      const videos = document.querySelectorAll('video');
-      videos.forEach(video => {
-        if (!video.paused && !video.hasAttribute('data-awareme-paused')) {
-          console.log('AwareMe: 检测到新的视频播放，立即暂停:', video.src || video.currentSrc || '未知来源');
-          video.pause();
-          video.setAttribute('data-awareme-paused', 'true');
-        }
-      });
-
-      // 重新检查各种视频网站的播放状态
-      this.recheckVideoSites();
-    }, 2000);
-  }
-
-  stopVideoMonitoring() {
-    if (this.videoMonitorInterval) {
-      console.log('AwareMe: 停止视频监控');
-      clearInterval(this.videoMonitorInterval);
-      this.videoMonitorInterval = null;
-    }
-  }
-
-  recheckVideoSites() {
-    // 重新检查YouTube
-    const youtubePlayer = document.querySelector('#movie_player video');
-    if (youtubePlayer && !youtubePlayer.paused) {
-      this.pauseYouTubeVideo();
-    }
-
-    // 重新检查B站
-    const bilibiliPlayer = document.querySelector('.bpx-player-video-wrap video, .bilibili-player-video video');
-    if (bilibiliPlayer && !bilibiliPlayer.paused) {
-      this.pauseBilibiliVideo();
-    }
-
-    // 重新检查其他网站
-    const allVideos = document.querySelectorAll('video');
-    let hasPlayingVideo = false;
-    allVideos.forEach(video => {
-      if (!video.paused) {
-        hasPlayingVideo = true;
-      }
-    });
-
-    if (hasPlayingVideo) {
-       this.pauseOtherVideoSites();
-     }
-   }
-
   handleFullscreenMode() {
     console.log('AwareMe: 检测全屏模式');
     
@@ -1040,9 +813,6 @@ class AwareMeContent {
   }
 
   closeModal(modal) {
-    // 停止视频监控
-    this.stopVideoMonitoring();
-    
     // 添加淡出动画类
     modal.querySelector('.awareme-modal-content').classList.add('awareme-fade-out');
     modal.querySelector('.awareme-modal-overlay').classList.add('awareme-fade-out');

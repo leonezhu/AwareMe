@@ -66,14 +66,6 @@ class AwareMeUtils {
       });
     }
     
-    if (config.durationLimits) {
-      config.durationLimits.forEach(limit => {
-        if (limit.domains) {
-          allConfiguredDomains.push(...limit.domains);
-        }
-      });
-    }
-    
     if (config.weeklyLimits) {
       config.weeklyLimits.forEach(limit => {
         if (limit.domains) {
@@ -84,24 +76,6 @@ class AwareMeUtils {
 
     // 检查当前域名是否匹配任何配置的域名（支持关键词模糊匹配）
     return allConfiguredDomains.some(configDomain => domain.includes(configDomain));
-  }
-
-  /**
-   * 在存储数据中模糊匹配关键词，返回匹配值的总和
-   * 用于支持关键词模糊匹配（如配置 "xman" 汇总 "xman44.com" 的数据）
-   * @param {Object} data - 存储数据对象 {actualDomain: value}
-   * @param {string} pattern - 配置的关键词或域名
-   * @returns {number} - 匹配的值总和
-   */
-  static fuzzySumByPattern(data, pattern) {
-    if (!data || !pattern) return 0;
-    let total = 0;
-    for (const [key, value] of Object.entries(data)) {
-      if (key.includes(pattern)) {
-        total += value || 0;
-      }
-    }
-    return total;
   }
 
   /**
@@ -134,14 +108,6 @@ class AwareMeUtils {
       });
     }
     
-    if (config.durationLimits) {
-      config.durationLimits.forEach(limit => {
-        if (limit.domains) {
-          limit.domains.forEach(domain => allDomains.add(domain));
-        }
-      });
-    }
-    
     if (config.weeklyLimits) {
       config.weeklyLimits.forEach(limit => {
         if (limit.domains) {
@@ -154,11 +120,31 @@ class AwareMeUtils {
   }
 
   /**
+   * 检查扩展上下文是否有效
+   * 扩展被重载/更新后，旧页面中残留的脚本上下文会失效，任何 chrome API 调用都会抛错
+   * @returns {boolean}
+   */
+  static isExtensionContextValid() {
+    try {
+      return typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * 加载用户配置
    * @returns {Object} - 用户配置对象
    */
   static async loadConfig() {
     try {
+      // 扩展上下文已失效时直接返回空配置，避免存储API报错刷屏
+      if (!AwareMeUtils.isExtensionContextValid()) {
+        return {
+          visitReminders: [],
+          weeklyLimits: []
+        };
+      }
       const result = await chrome.storage.local.get(['userConfig']);
       if (result.userConfig) {
         console.log('加载用户配置成功');
@@ -180,7 +166,6 @@ class AwareMeUtils {
           // 返回空配置，这样插件仍然可以正常工作，只是没有任何规则
           return {
             visitReminders: [],
-            durationLimits: [],
             weeklyLimits: []
           };
         }
@@ -190,7 +175,6 @@ class AwareMeUtils {
       // 返回空配置而不是null，确保插件可以继续工作
       return {
         visitReminders: [],
-        durationLimits: [],
         weeklyLimits: []
       };
     }
@@ -214,25 +198,6 @@ class AwareMeStats {
       return visits[domain] || 0;
     } catch (error) {
       console.error('获取今日访问次数失败:', error);
-      return 0; // 出错时返回默认值
-    }
-  }
-
-  /**
-   * 获取今日浏览时长
-   * @param {string} domain - 域名
-   * @returns {number} - 浏览时长（毫秒）
-   */
-  static async getTodayDuration(domain) {
-    try {
-      const today = new Date().toDateString();
-      const durationKey = `duration_${today}`;
-      
-      const result = await chrome.storage.local.get([durationKey]);
-      const durations = result[durationKey] || {};
-      return durations[domain] || 0;
-    } catch (error) {
-      console.error('获取今日浏览时长失败:', error);
       return 0; // 出错时返回默认值
     }
   }
@@ -312,35 +277,6 @@ class AwareMeStats {
   }
 
   /**
-   * 获取域名组的今日总浏览时长
-   * @param {Array} domains - 域名数组
-   * @returns {number} - 总浏览时长（毫秒）
-   */
-  static async getTodayDurationForGroup(domains) {
-    try {
-      if (!domains || domains.length === 0) {
-        return 0;
-      }
-      
-      const today = new Date().toDateString();
-      const durationKey = `duration_${today}`;
-      
-      const result = await chrome.storage.local.get([durationKey]);
-      const durations = result[durationKey] || {};
-      
-      let totalDuration = 0;
-      domains.forEach(pattern => {
-        totalDuration += AwareMeUtils.fuzzySumByPattern(durations, pattern);
-      });
-      
-      return totalDuration;
-    } catch (error) {
-      console.error('获取域名组今日总浏览时长失败:', error);
-      return 0; // 出错时返回默认值
-    }
-  }
-
-  /**
    * 记录访问
    * @param {string} domain - 域名
    */
@@ -363,13 +299,12 @@ class AwareMeStats {
   }
 
   /**
-   * 获取所有统计数据
-   * @returns {Object} - 包含访问和时长数据的对象
+   * 获取所有访问统计数据
+   * @returns {Object} - 包含访问数据的对象
    */
   static async getAllStats() {
     const allStorageData = await chrome.storage.local.get();
     const visitData = {};
-    const durationData = {};
     const domains = new Set();
     
     // 处理所有数据
@@ -380,16 +315,14 @@ class AwareMeStats {
         for (const domain of Object.keys(value)) {
           domains.add(domain);
         }
-      } else if (key.startsWith('duration_')) {
-        durationData[key] = value;
       }
     }
     
-    return { visitData, durationData, domains: Array.from(domains) };
+    return { visitData, domains: Array.from(domains) };
   }
 
   /**
-   * 清理非本周的访问记录和时长记录
+   * 清理非本周的访问记录
    * @returns {Object} - 清理结果统计
    */
   static async cleanupOldRecords() {
@@ -399,7 +332,6 @@ class AwareMeStats {
     const allStorageData = await chrome.storage.local.get();
     const keysToDelete = [];
     let visitRecordsDeleted = 0;
-    let durationRecordsDeleted = 0;
     
     // 生成本周所有日期的字符串集合
     const thisWeekDates = new Set();
@@ -416,14 +348,6 @@ class AwareMeStats {
           keysToDelete.push(key);
           visitRecordsDeleted++;
           console.log(`标记删除访问记录: ${key} (日期: ${dateStr})`);
-        }
-      } else if (key.startsWith('duration_')) {
-        // 提取日期部分
-        const dateStr = key.replace('duration_', '');
-        if (!thisWeekDates.has(dateStr)) {
-          keysToDelete.push(key);
-          durationRecordsDeleted++;
-          console.log(`标记删除时长记录: ${key} (日期: ${dateStr})`);
         }
       } else if (key.startsWith('weekly_')) {
         // 清理旧的周访问跟踪记录
@@ -452,8 +376,7 @@ class AwareMeStats {
     return {
       totalDeleted: keysToDelete.length,
       visitRecordsDeleted,
-      durationRecordsDeleted,
-      weeklyRecordsDeleted: keysToDelete.length - visitRecordsDeleted - durationRecordsDeleted
+      weeklyRecordsDeleted: keysToDelete.length - visitRecordsDeleted
     };
   }
 }
